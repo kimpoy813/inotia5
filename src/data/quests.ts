@@ -1,4 +1,5 @@
-import type { Objective, Quest } from '../game/types'
+import type { Objective, Quest, Save } from '../game/types'
+import { CHAPTER_TWO } from './chapterTwo'
 const obj = (event:Objective['event'],target:string,count:number,label:string,map:Objective['map']):Objective=>({event,target,count,label,map})
 const definitions: Quest[] = [
   { id:'q1',title:'An Unexpected Awakening',detail:'The village bell rings once without a hand to move it. Captain Tarek is watching the square.',category:'Main',giver:'tarek',end:'tarek',next:'q2',xp:54,gold:26,
@@ -21,7 +22,7 @@ const definitions: Quest[] = [
     objectives:[obj('inspect','ruin',1,'Examine the Oath Gate','forest')],begin:'I remember the song carved here. I don’t remember who used to sing it.',finish:['The gate swings inward without a sound. Beyond it, a faded inscription shines: “Ember remembers what the water takes; only then may the thorn be laid.”','You hear someone on the other side, humming the melody your mother used to sing.'] },
   { id:'q9',title:'The Fallen Spire',detail:'Enter the Spire, defeat two guardians, and awaken the three runes. The inscription near the entrance holds the order.',category:'Main',giver:'ruin',end:'oath-door',after:'q8',next:'q10',xp:188,gold:76,prize:'mp',
     objectives:[obj('visit','spire',1,'Enter the Fallen Spire','spire'),obj('kill','guardian',2,'Defeat Spire guardians','spire'),obj('puzzle','runes',1,'Light the runes in the order of the oath','spire')],begin:'A voice from under the threshold: not every guard is here by choice. Set the three signs right before disturbing the roots.',finish:['“Ember, Tide, Thorn.” The latch answers each word.','Through the widening door you see a figure made of roots, holding its own broken crown in two careful hands.'] },
-  { id:'q10',title:'The Heart of Corruption',detail:'Defeat the Gloomroot Warden and recover the Oath Shard. A return gate appears after the fight. Bring the shard to Tarek in Lumenford.',category:'Main',giver:'oath-door',end:'tarek',after:'q9',xp:305,gold:132,prize:'pendant',
+  { id:'q10',title:'The Heart of Corruption',detail:'Defeat the Gloomroot Warden and recover the Oath Shard. A return gate appears after the fight. Bring the shard to Tarek in Lumenford.',category:'Main',giver:'oath-door',end:'tarek',after:'q9',next:'q11',xp:305,gold:132,prize:'pendant',
     objectives:[obj('kill','warden',1,'Defeat the Gloomroot Warden','spire'),obj('collect','shard',1,'Recover the Oath Shard','spire')],
     begin:'When the earth glows, move. After the strike, the Warden’s heart lies open. That’s when to get close.',finish:['The shard remembers Seris standing beside a man the old records call Malrec. Neither was sealing the Veil from outside. They were holding it shut from within.','Tarek wraps the shard in his cloak. “If the Crown learns what this is, they will carry it to the capital. We should decide what to tell them first.”'] },
   { id:'side-lamps',title:'A Light Left Burning',detail:'Bess is missing the flame that used to guide travellers home. Collect Veil Dust to replace it.',category:'Side',giver:'bess',end:'bess',xp:85,gold:50,prize:'cleanse',
@@ -33,11 +34,21 @@ const definitions: Quest[] = [
   { id:'side-lyra',title:'What the Light Carries',detail:'With Lyra in the party, draw out the Veil Wisps that keep vigil in the Hollowwood.',category:'Side',giver:'lyra',end:'lyra',after:'q7',xp:135,gold:68,prize:'focus',
     objectives:[obj('kill','wisp',2,'Release the restless Veil Wisps','forest')],begin:'The wisps hold voices from the frontier. Give them a little light when they fade. I would want someone to do that for me.',finish:['One voice said thank you. It had the accent of my old street in the capital. I hadn’t heard it in years.'] },
 ]
-export const QUESTS:Record<string,Quest> = Object.fromEntries(definitions.map(q=>[q.id,q]))
-export const QUEST_LIST = definitions
+export const QUEST_LIST = [...definitions, ...CHAPTER_TWO]
+export const QUESTS:Record<string,Quest> = Object.fromEntries(QUEST_LIST.map(q=>[q.id,q]))
+// Existing release saves used the same version and ended before this quest existed.
+export function restoreChapterEntry(s:Save) {
+  if(s.quests.q10?.state==='done'&&!s.quests.q11) {
+    s.quests.q11={state:'active',progress:[Number(s.region==='pass'),0]}
+    if(!s.quests[s.tracked]||s.quests[s.tracked].state==='done')s.tracked='q11'
+  }
+}
 export const NPC_TEXT: Record<string,string> = {
   tarek:'I keep my old commission in the bottom of a trunk. A uniform forgets more than a man can.', lyra:'If it hurts, say so. You don’t have to make a virtue of silence.',
   corin:'The scales are honest, the mule is not. What do you need?', mara:'A good edge shouldn’t sing. If it does, ease up on the stone.',
   seris:'The oldest oath has no word for obedience. Only for listening.', guard:'I never learned all the names of my company. I’ll remember the ones I knew.',
+  veyra:'I don’t mind someone reading over my shoulder. I mind someone deciding which words I was allowed to write.',
+  iona:'They call it good record keeping when the wrong people go missing.',
+  mira:'The marks by my door always climbed faster in the summer.', gatekeeper:'An unsigned name cannot pass. Your boots, however, are not on my list.',
   bess:'Never leave a lamp dark on the road. You don’t know who is coming home late.', ellan:'When the east gate opens at dawn, you can see threads of blue in the mist. There weren’t any last winter.',
 }

@@ -10,5 +10,6 @@ import '@fontsource/dm-sans/latin-600.css'
 import '@fontsource/dm-sans/latin-700.css'
 import App from './app/App'
 import './ui/styles.css'
+import './ui/visuals.css'
 
 createRoot(document.getElementById('root')!).render(<App/>)

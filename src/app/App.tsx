@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowDownToLine, ArrowRight, ArrowUpFromLine, FileArchive, Gamepad2 } from 'lucide-react'
+import { ArrowDownToLine, ArrowRight, ArrowUpFromLine, FileArchive } from 'lucide-react'
 import { ROLES } from '../data/classes'
 import { MAPS } from '../data/maps'
+import { beginAtAshenPass } from '../game/chapterStart'
 import { audio } from '../game/audio'
 import { Game } from '../game/model'
 import { createSave } from '../game/progression'
 import { exportSave, parseSave, readSettings, readSlots, storeSettings, writeSave } from '../game/save'
 import type { Save, Settings } from '../game/types'
 import { Creation, type CreationData } from '../ui/Creation'
+import { ChronicleMenu } from '../ui/Chronicle'
 import { Help, SettingsForm } from '../ui/settings'
 import { Title, type TitlePanel } from '../ui/Title'
 import { Button, DialogShell, Ornament, Sigil, SpriteArt, formatTime } from '../ui/ui'
@@ -28,7 +30,7 @@ function LoadSlots({slots,start,update}:{slots:(Save|null)[];start:(s:Save)=>voi
   </div>
 }
 export default function App(){
-  const [view,setView]=useState<'title'|'creation'>('title'),[slots,setSlots]=useState<(Save|null)[]>([null,null,null]),[panel,setPanel]=useState<TitlePanel|null>(null),[session,setSession]=useState<Game|null>(null),[settings,setSettings]=useState<Settings>(readSettings),[offline,setOffline]=useState(false),[install,setInstall]=useState<InstallEvent|null>(null)
+  const [view,setView]=useState<'title'|'creation'>('title'),[entry,setEntry]=useState<1|2>(1),[slots,setSlots]=useState<(Save|null)[]>([null,null,null]),[panel,setPanel]=useState<TitlePanel|null>(null),[session,setSession]=useState<Game|null>(null),[settings,setSettings]=useState<Settings>(readSettings),[offline,setOffline]=useState(false),[install,setInstall]=useState<InstallEvent|null>(null)
   const refreshSlots=async()=>setSlots(await readSlots())
   useEffect(()=>{
     void refreshSlots()
@@ -46,19 +48,19 @@ export default function App(){
   },[settings,session,panel,view])
   function updateSettings(s:Settings){setSettings(s);storeSettings(s);audio.set(s);audio.unlock()}
   function start(s:Save){const copy=structuredClone(s);audio.set(copy.settings);audio.unlock();audio.play('ui');setPanel(null);setSession(new Game(copy,writeSave));void writeSave(copy)}
-  function openCreation(){setPanel(null);setView('creation');audio.play('ui');void import('../game/WorldScene').catch(()=>{})}
-  function create(data:CreationData){const {name,classId,skin,dye,style,slot}=data;start(createSave(name,classId,skin,dye,style,slot,settings))}
+  function openCreation(chapter:1|2=1){setEntry(chapter);setPanel(null);setView('creation');audio.play('ui');void import('../game/WorldScene').catch(()=>{})}
+  function create(data:CreationData){const {name,classId,skin,dye,style,slot}=data,s=createSave(name,classId,skin,dye,style,slot,settings);start(entry===2?beginAtAshenPass(s):s)}
   function goTitle(){if(session){void session.persist().then(refreshSlots);updateSettings(session.save.settings)}setSession(null);setView('title');setPanel(null)}
   if(session)return <GameScreen sim={session} onTitle={goTitle} onSettings={()=>updateSettings(session.save.settings)}/>
-  if(view==='creation')return <Creation slots={slots} back={goTitle} start={create}/>
+  if(view==='creation')return <Creation slots={slots} chapter={entry} motion={settings.motion} back={goTitle} start={create}/>
   const latest=slots.filter(s=>s!==null).sort((a,b)=>b.updated-a.updated)[0]
   const dismiss=()=>setPanel(null)
   return <>
-    <Title onNew={openCreation} hasSave={!!latest} onContinue={()=>{if(latest)start(latest)}} onPanel={p=>{setPanel(p);audio.play('ui')}} mute={settings.mute} toggleMute={()=>updateSettings({...settings,mute:!settings.mute})} motion={settings.motion} offline={offline} onInstall={install?()=>{void install.prompt().then(()=>setInstall(null))}:undefined}/>
+    <Title onNew={()=>openCreation()} hasSave={!!latest} onContinue={()=>{if(latest)start(latest)}} onPanel={p=>{setPanel(p);audio.play('ui')}} mute={settings.mute} toggleMute={()=>updateSettings({...settings,mute:!settings.mute})} motion={settings.motion} offline={offline} onInstall={install?()=>{void install.prompt().then(()=>setInstall(null))}:undefined}/>
     {panel==='load'&&<DialogShell title="Load Game" kicker="Journeys" onClose={dismiss} wide><LoadSlots slots={slots} start={start} update={refreshSlots}/></DialogShell>}
     {panel==='settings'&&<DialogShell title="Settings" kicker="Options" onClose={dismiss}><SettingsForm settings={settings} onChange={updateSettings}/></DialogShell>}
     {panel==='help'&&<DialogShell title="How to Play" kicker="Field guide" onClose={dismiss} wide><Help/></DialogShell>}
-    {panel==='chapter'&&<DialogShell title="The Broken Seal" kicker="Chapter I" onClose={dismiss}><div className="chapter-modal-art"/><p className="lore-copy">The bells of Lumenford ring before dawn. On the eastern road, travellers have started to vanish. And a mark on your hand starts to burn at the sound of a voice that remembers you.</p><Button variant="primary" onClick={openCreation}><Gamepad2 size={17}/> Start Chapter I <ArrowRight size={16}/></Button></DialogShell>}
-    {panel==='credits'&&<DialogShell title="Credits" onClose={dismiss}><div className="credits-content"><Sigil size={47}/><h3>Eclipse of the Veil</h3><Ornament/><p>An unofficial Inotia-inspired fan project. Not affiliated with or endorsed by Com2uS.</p><p>The world, dialogue, runtime pixel art, and synthesized score are original to this game. The title and chapter illustrations were generated for this project.</p><p className="mini muted">Built with Phaser, React, TypeScript, Vite and Lucide. Fonts: Cinzel, Crimson Pro, and DM Sans.</p></div></DialogShell>}
+    {panel==='chapter'&&<DialogShell title="Chronicle" kicker="The story so far" onClose={dismiss} wide><ChronicleMenu save={latest} onNew={()=>openCreation()} onChapterTwo={()=>openCreation(2)} onContinue={()=>{if(latest)start(latest)}}/></DialogShell>}
+    {panel==='credits'&&<DialogShell title="Credits" onClose={dismiss}><div className="credits-content"><Sigil size={47}/><h3>Eclipse of the Veil</h3><Ornament/><p>An unofficial Inotia-inspired fan project. Not affiliated with or endorsed by Com2uS.</p><p>Original pixel sprites, terrain, icons, story, and synthesized score. The crimson-eclipse cover, class portraits, and select scenery were generated for this project, using the supplied showcase as visual direction.</p><p className="mini muted">Built with Phaser, React, TypeScript, Vite and Lucide. Fonts: Cinzel, Crimson Pro, and DM Sans.</p></div></DialogShell>}
   </>
 }

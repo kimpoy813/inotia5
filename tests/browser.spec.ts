@@ -1,9 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
 import { ROLES } from '../src/data/classes'
-import { coord } from '../src/data/maps'
+import { MAPS, TILE, coord } from '../src/data/maps'
 import { QUEST_LIST } from '../src/data/quests'
 import { Game } from '../src/game/model'
 import { createSave, defaultSettings, gainXp, statsOf } from '../src/game/progression'
+import type { Point, RegionId, Save } from '../src/game/types'
+import { advanceTo, legacyEnding } from './fixtures/journeys'
 
 const canvas = '[data-testid="world"] canvas'
 const marker = '.map-surface--small svg g[transform]'
@@ -30,6 +32,64 @@ async function axis(p:Page,i:0|1,to:number) {
   try{await p.waitForFunction(({selector,i,to,inc})=>{const v=document.querySelector(selector)?.getAttribute('transform')?.match(/translate\(([^ ]+) ([^)]+)\)/);return !!v && (inc?Number(v[i+1])>=to-.15:Number(v[i+1])<=to+.15)}, {selector:marker,i,to,inc:to>from},{timeout:9000})}
   finally{await p.keyboard.up(key)}
 }
+
+test('reference art: class portraits, live sprite animation and real pixel action icons',async({page},info)=>{
+  const errors=captureErrors(page)
+  await page.goto('/')
+  await expect(page.locator('.title-art')).toHaveCSS('background-image',/crimson-eclipse\.webp/)
+  await page.getByRole('button',{name:'New Game',exact:true}).click()
+  const portraits=page.locator('.class-avatar img')
+  await expect(portraits).toHaveCount(6)
+  await expect.poll(()=>portraits.evaluateAll(images=>images.every(node=>(node as HTMLImageElement).naturalWidth>0))).toBe(true)
+  const artwork=page.locator('.hero-class-art'),preview=page.locator('.sprite-stage canvas')
+  await expect.poll(()=>artwork.evaluate((image:HTMLImageElement)=>image.naturalWidth)).toBeGreaterThan(0)
+  await page.screenshot({path:info.outputPath('creation.png')})
+  const idle=await preview.evaluate((c:HTMLCanvasElement)=>c.toDataURL())
+  await page.getByRole('button',{name:'Walk',exact:true}).click()
+  await expect.poll(()=>preview.evaluate((c:HTMLCanvasElement)=>c.toDataURL())).not.toBe(idle)
+  await page.getByRole('button',{name:/Ranger/}).click()
+  await expect(artwork).toHaveAttribute('src','/art/classes/ranger.webp')
+  await expect(page.getByRole('button',{name:'Pine green',exact:true})).toHaveAttribute('aria-pressed','true')
+  await page.getByRole('button',{name:'Crimson',exact:true}).click()
+  await page.getByRole('button',{name:/Black Knight/}).click()
+  await expect(page.getByRole('button',{name:'Crimson',exact:true})).toHaveAttribute('aria-pressed','true')
+  await page.getByLabel('Character name').fill('Aster')
+  await page.getByRole('button',{name:'Begin Adventure'}).click()
+  await page.locator(canvas).waitFor()
+  const skill=page.getByRole('button',{name:'Use Night Slash'}).locator('canvas')
+  await expect.poll(()=>skill.evaluate((c:HTMLCanvasElement)=>c.getContext('2d')!.getImageData(0,0,c.width,c.height).data.some((n,i)=>i%4===3&&n>0))).toBe(true)
+  await expect(page.getByRole('heading',{name:'Lumenford Village'})).toBeVisible()
+  await page.screenshot({path:info.outputPath('lumenford.png')})
+  await page.keyboard.press('i')
+  await expect(page.getByRole('dialog',{name:'Inventory',exact:true})).toBeVisible()
+  const tonics=page.locator('.bag-grid .pixel-icon')
+  await expect(tonics).toHaveCount(2)
+  expect(await tonics.evaluateAll(nodes=>new Set(nodes.map(n=>(n as HTMLCanvasElement).toDataURL())).size)).toBe(2)
+  await page.screenshot({path:info.outputPath('inventory.png')})
+  await page.keyboard.press('Escape');await page.keyboard.press('k')
+  await expect(page.getByRole('dialog',{name:'Skillbook',exact:true})).toBeVisible()
+  await expect(page.locator('.skill-glyph .pixel-icon')).toHaveCount(6)
+  expect(errors).toEqual([])
+})
+
+test('portrait touch: the full roster and game menus remain reachable',async({browser},info)=>{
+  const context=await browser.newContext({baseURL:'http://localhost:4317',viewport:{width:390,height:844},isMobile:true,hasTouch:true})
+  const page=await context.newPage(),errors=captureErrors(page)
+  try{
+    await page.goto('/');await page.getByRole('button',{name:'New Game',exact:true}).tap()
+    const roster=page.locator('.class-picker');await expect(roster).toBeVisible()
+    expect((await roster.boundingBox())!.width).toBeGreaterThan(345)
+    await page.getByRole('button',{name:/Warlock/}).tap()
+    const attack=page.getByRole('button',{name:'Attack',exact:true});await attack.tap();await expect(attack).toHaveAttribute('aria-pressed','true')
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390)
+    await page.getByRole('button',{name:'Begin Adventure'}).tap();await page.locator(canvas).waitFor()
+    const inventory=page.getByRole('button',{name:'Inventory',exact:true}),bag=(await inventory.boundingBox())!,bar=(await page.locator('.action-strip').boundingBox())!
+    expect(bag.y+bag.height).toBeLessThan(bar.y)
+    await page.screenshot({path:info.outputPath('portrait-touch.png')})
+    await inventory.tap();await expect(page.getByRole('dialog',{name:'Inventory',exact:true})).toBeVisible()
+    expect(errors).toEqual([])
+  }finally{await context.close()}
+})
 
  test('desktop: real combat, quest, progression and travel survive an offline refresh',async({page,context})=>{
   const errors=captureErrors(page)
@@ -126,5 +186,156 @@ async function axis(p:Page,i:0|1,to:number) {
   await expect(page.locator('.quest-widget')).toContainText('Recover the Oath Shard',{timeout:22000})
   await page.keyboard.press('Escape')
   const download=page.waitForEvent('download');await page.getByRole('button',{name:'Export Save'}).click();expect((await download).suggestedFilename()).toBe('veilbound-slot-1.json')
+  expect(errors).toEqual([])
+})
+
+const saved = (page:Page,slot=1)=>page.evaluate(slot=>JSON.parse(localStorage.getItem(`veilbound-save-${slot}`)??'null') as Save|null,slot)
+async function importJourney(page:Page,record:Save){
+  await page.getByRole('button',{name:'Load Game',exact:true}).click()
+  await page.locator('input[type="file"]').setInputFiles({name:'chapter-one.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(record))})
+  await expect(page.getByText(new RegExp(`Ready to import ${record.name}`))).toBeVisible()
+  await page.getByRole('button',{name:'Import to Slot'}).click()
+  await page.getByRole('button',{name:'Load',exact:true}).click()
+  await page.locator(canvas).waitFor()
+}
+async function worldClick(p:Page,id:RegionId,point:Point,lift=8){
+  const map=MAPS[id],surface=p.locator(canvas),bounds=(await surface.boundingBox())!,view=await surface.evaluate((el:HTMLCanvasElement)=>({w:el.width,h:el.height}))
+  const pos=(await p.locator(marker).getAttribute('transform'))!.match(/translate\(([^ ]+) ([^)]+)\)/)!
+  const [x,y]=[Number(pos[1])*TILE,Number(pos[2])*TILE]
+  const clamp=(n:number,max:number)=>Math.round(Math.max(0,Math.min(Math.max(0,max),n)))
+  const sx=clamp(x-view.w/2-5,map.w*TILE-view.w),sy=clamp(y-9-view.h/2-5,map.h*TILE-view.h)
+  const px=(point.x-sx)/view.w*bounds.width,py=(point.y-lift-sy)/view.h*bounds.height
+  expect(px,`World click visible in ${id}`).toBeGreaterThan(0);expect(px).toBeLessThan(bounds.width)
+  expect(py,`World click visible in ${id}`).toBeGreaterThan(0);expect(py).toBeLessThan(bounds.height)
+  await p.mouse.click(bounds.x+px,bounds.y+py)
+}
+const feature=(id:RegionId,key:string)=>MAPS[id].features.find(f=>f.id===key)!
+async function readScene(page:Page){
+  const dialog=page.locator('.story-panel')
+  for(let i=0;i<9&&await dialog.isVisible();i++)await page.keyboard.press('e')
+  await expect(dialog).toBeHidden()
+}
+
+test('a Chapter I save opens Vesperhold, keeps its shard decision and continues offline',async({page,context},info)=>{
+  const errors=captureErrors(page),old=legacyEnding('ranger','warned','pass','Story')
+  Object.assign(old,coord(29,10));await page.goto('/')
+  await page.evaluate(()=>document.fonts.ready.then(()=>null));await page.screenshot({path:info.outputPath('title.png')})
+  await page.getByRole('button',{name:'Open Chronicle'}).click()
+  await expect(page.getByRole('heading',{name:'The Bell Below'})).toBeVisible()
+  await page.getByRole('button',{name:'Read the Prologue'}).click();await expect(page.getByRole('heading',{name:'The Morning Bell'})).toBeVisible()
+  await page.getByRole('button',{name:'Close',exact:true}).click()
+  await importJourney(page,old)
+  await expect(page.getByRole('heading',{name:'Ashen Pass'})).toBeVisible()
+  await page.getByRole('button',{name:'Talk Veyra'}).click()
+  const dialog=page.getByRole('dialog',{name:'Conversation with Veyra'})
+  await expect(dialog.locator('img')).toHaveJSProperty('complete',true)
+  await page.getByRole('button',{name:'Show Veyra the Oath Shard',exact:true}).click()
+  await expect(dialog).toContainText('bronze shields')
+  await page.screenshot({path:info.outputPath('veyra.png')})
+  await readScene(page)
+  await expect(page.locator('.quest-widget')).toContainText('The Census of Names')
+  await worldClick(page,'pass',feature('pass','to-capital'))
+  await expect(page.getByRole('heading',{name:'Vesperhold'})).toBeVisible()
+  await worldClick(page,'capital',feature('capital','city-shrine'))
+  await expect(page.getByText(/Checkpoint restored/)).toBeVisible()
+  await worldClick(page,'capital',feature('capital','census-stone'))
+  await expect(page.getByRole('dialog',{name:'Conversation with The Census of the Living'})).toBeVisible()
+  await readScene(page)
+  await worldClick(page,'capital',feature('capital','iona'),30)
+  await expect(page.getByRole('dialog',{name:'Conversation with Archivist Iona'})).toBeVisible()
+  await page.getByRole('button',{name:'Ask about the erased names'}).click()
+  await expect(page.getByRole('dialog',{name:'Conversation with Archivist Iona'})).toContainText('eastern public stair')
+  await readScene(page);await page.screenshot({path:info.outputPath('vesperhold.png')})
+  await expect(page.locator('.quest-widget')).toContainText('Public Stair')
+  const record=await saved(page)
+  expect(record?.flags.decision).toBe('warned');expect(record?.quests.q12.state).toBe('done');expect(record?.region).toBe('capital')
+  await page.waitForFunction(()=>navigator.serviceWorker.controller!==null)
+  await context.setOffline(true);await page.reload();await page.getByRole('button',{name:'Continue',exact:true}).click()
+  await page.locator(canvas).waitFor();await expect(page.locator('.quest-widget')).toContainText('The Drowned Archive')
+  expect(errors).toEqual([])
+})
+
+test('touch Chapter II start creates a separate journey and records Veyra in the journal',async({browser},info)=>{
+  const context=await browser.newContext({baseURL:'http://localhost:4317',viewport:{width:844,height:390},isMobile:true,hasTouch:true})
+  const page=await context.newPage(),errors=captureErrors(page)
+  const old=legacyEnding('knight','warned')
+  await page.addInitScript((record)=>{if(!localStorage.getItem('veilbound-save-1'))localStorage.setItem('veilbound-save-1',JSON.stringify(record))},old)
+  try{
+    await page.goto('/');await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeEnabled()
+    await page.getByRole('button',{name:'Open Chronicle'}).tap();await page.getByRole('button',{name:'Start in Chapter II'}).tap()
+    await expect(page.getByLabel('Save slot')).toHaveValue('2')
+    await page.getByLabel('Character name').fill('Vesper')
+    await page.getByRole('button',{name:'Begin Chapter II'}).tap();await page.locator(canvas).waitFor()
+    await expect(page.getByRole('heading',{name:'Ashen Pass'})).toBeVisible();await expect(page.locator('.vitals-name')).toContainText('Lv. 6')
+    const pad=page.getByRole('button',{name:'Movement joystick'}),box=(await pad.boundingBox())!,cdp=await context.newCDPSession(page)
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:box.x+box.width*.65,y:box.y+box.height*.19,id:1}]})
+    const veyra=page.getByRole('button',{name:'Talk Veyra',exact:true})
+    try{await expect(veyra).toBeVisible({timeout:4800})}finally{await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]})}
+    await expect(page.getByRole('button',{name:'Use Dread Mark'})).toHaveAttribute('aria-disabled','false')
+    await page.screenshot({path:info.outputPath('touch-hud.png')})
+    await veyra.tap()
+    await page.getByRole('button',{name:'Show Veyra the Oath Shard',exact:true}).tap();await page.getByRole('button',{name:'Keep the shard hidden'}).tap()
+    await expect(page.getByRole('dialog',{name:'Conversation with Veyra'})).toContainText('through the canal')
+    await readScene(page)
+    await page.getByRole('button',{name:'Journal',exact:true}).tap();await page.getByRole('button',{name:'People',exact:true}).tap()
+    await page.getByRole('button',{name:'Veyra',exact:true}).tap();await expect(page.getByText('The Shadow Emissary')).toBeVisible()
+    expect((await saved(page))?.name).toBe(old.name);expect((await saved(page))?.flags.decision).toBe('warned')
+    expect((await saved(page,2))?.flags).toMatchObject({decision:'hidden','chapter-start':'II'});expect(errors).toEqual([])
+  }finally{await context.close()}
+})
+
+test('the Archive: two water wheels open a traversable grating',async({page},info)=>{
+  const errors=captureErrors(page),s=advanceTo(legacyEnding('ranger','hidden','village','Story'),12)
+  s.region='archive';Object.assign(s,coord(13,27))
+  await page.goto('/');await importJourney(page,s)
+  await expect(page.getByRole('heading',{name:'The Drowned Archive'})).toBeVisible()
+  await page.getByRole('button',{name:'Examine West Water Wheel',exact:true}).click()
+  await expect(page.locator('.quest-widget')).toContainText('Turn the east water wheel')
+  await expect.poll(async()=>(await saved(page))?.flags['water-gates']).toBe(false)
+  await worldClick(page,'archive',feature('archive','archive-shrine'))
+  await expect(page.getByText(/Checkpoint restored/)).toBeVisible()
+  await axis(page,1,36);await axis(page,0,45.56);await axis(page,1,27.45)
+  await page.getByRole('button',{name:'Examine East Water Wheel',exact:true}).click()
+  await expect(page.getByText(/The central grating is open/)).toBeVisible()
+  await expect.poll(async()=>(await saved(page))?.quests.q13?.progress.slice(0,2)).toEqual([1,1])
+  await expect(page.locator('.quest-widget')).toContainText('Cross the open grating')
+  await worldClick(page,'archive',coord(29,18),0)
+  await page.waitForFunction(selector=>{
+    const position=document.querySelector(selector)?.getAttribute('transform')?.match(/translate\(([^ ]+) ([^)]+)\)/)
+    return position&&Number(position[2])<20
+  },marker,{timeout:9000})
+  await page.screenshot({path:info.outputPath('archive.png')})
+  expect((await saved(page))?.flags['water-gates']).toBe(true)
+  expect(errors).toEqual([])
+})
+
+test('the Last Bell: readable phase two warning, clapper pickup, Malrec vision and final choice',async({page},info)=>{
+  const errors=captureErrors(page),s=advanceTo(legacyEnding('ranger','hidden','village','Story'),14)
+  s.region='bellvault';Object.assign(s,coord(26,24));s.checkpoint={region:'bellvault',...coord(23,32)}
+  await page.goto('/');await importJourney(page,s)
+  await expect(page.getByRole('heading',{name:'Caldus, the Hollow Knight'})).toBeVisible()
+  await page.keyboard.press('Tab');await page.keyboard.press('f');await page.keyboard.press('1')
+  await expect(page.getByRole('meter',{name:'Boss HP'})).not.toHaveAttribute('aria-valuenow','1720')
+  await expect(page.getByText('Bell ring · Inside the small circle or beyond the large one')).toBeVisible({timeout:22000})
+  await page.screenshot({path:info.outputPath('last-bell.png')})
+  await expect(page.locator('.quest-widget')).toContainText('Recover the Last Bell Clapper',{timeout:25000})
+  const key=(await saved(page))?.drops.bellvault?.find(d=>d.stack?.id==='bell-key');expect(key).toBeDefined()
+  await worldClick(page,'bellvault',key!,4)
+  await expect(page.locator('.quest-widget')).toContainText('Examine Altar of the Last Bell')
+  await worldClick(page,'bellvault',feature('bellvault','bell-altar'))
+  await expect(page.getByRole('dialog',{name:'Conversation with The Altar of the Last Bell'})).toBeVisible()
+  await page.keyboard.press('e');await expect(page.getByRole('dialog',{name:'Conversation with Lord Malrec'})).toBeVisible()
+  await expect(page.locator('.story-panel img')).toHaveJSProperty('complete',true)
+  await readScene(page)
+  await axis(page,0,26.5);await axis(page,1,34.25)
+  await page.getByRole('button',{name:'Travel The Drowned Archive'}).click()
+  await expect(page.getByRole('heading',{name:'The Drowned Archive'})).toBeVisible()
+  await worldClick(page,'archive',feature('archive','archive-lift'))
+  await expect(page.getByRole('heading',{name:'Vesperhold'})).toBeVisible()
+  await page.getByRole('button',{name:'Talk Archivist Iona'}).click()
+  await page.getByRole('button',{name:'Decide what happens to the names'}).click();await page.getByRole('button',{name:'Continue',exact:true}).click()
+  await page.getByRole('button',{name:'Shelter the names with the families'}).click();await readScene(page)
+  await expect(page.locator('.quest-widget')).toContainText('Chapter II complete')
+  const end=await saved(page);expect(end?.flags['bell-fate']).toBe('sheltered');expect(end?.bag.some(i=>i.id==='cipherheart')).toBe(true)
   expect(errors).toEqual([])
 })

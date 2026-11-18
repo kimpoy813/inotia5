@@ -1,11 +1,11 @@
 import type { EnemyId } from './enemies'
 import type { Point, RegionId } from '../game/types'
 export const TILE = 16
-export type Ground = 'grass' | 'path' | 'stone' | 'water' | 'bridge' | 'moss' | 'wall' | 'slate' | 'snow' | 'abyss'
-export type Decor = 'pine' | 'oak' | 'rock' | 'house' | 'fence' | 'bush' | 'lamp' | 'well' | 'column' | 'arch' | 'crystal' | 'banner' | 'crate' | 'lily'
+export type Ground = 'grass' | 'path' | 'stone' | 'water' | 'bridge' | 'moss' | 'wall' | 'slate' | 'snow' | 'abyss' | 'cobbles' | 'marble' | 'grate'
+export type Decor = 'pine' | 'oak' | 'rock' | 'house' | 'fence' | 'bush' | 'lamp' | 'well' | 'column' | 'arch' | 'crystal' | 'banner' | 'crate' | 'lily' | 'wardhall' | 'balcony' | 'stall' | 'skiff' | 'shelf' | 'bell' | 'organ' | 'lift'
 export type Prop = Point & { kind: Decor; variant: number; solid?: boolean }
-export type Feature = Point & { id: string; name: string; kind: 'npc' | 'exit' | 'loot' | 'shrine' | 'inspect' | 'rune' | 'chest'; to?: { region: RegionId; x: number; y: number }; needs?: string; item?: string; palette?: number }
-export type Spawn = Point & { id: EnemyId; key: string }
+export type Feature = Point & { id: string; name: string; kind: 'npc' | 'exit' | 'loot' | 'shrine' | 'inspect' | 'rune' | 'chest'; to?: { region: RegionId; x: number; y: number }; needs?: string; item?: string; palette?: number; entry?: 'hidden' | 'warned'; icon?: string }
+export type Spawn = Point & { id: EnemyId; key: string; entry?: 'hidden' | 'warned' }
 export type MapDef = { id: RegionId; name: string; sub: string; w: number; h: number; seed: number; tiles: Ground[]; blocked: boolean[]; props: Prop[]; features: Feature[]; spawns: Spawn[] }
 export const coord = (x: number, y: number): Point => ({ x: Math.round((x + .5) * TILE), y: Math.round((y + .5) * TILE) })
 export const VILLAGE_START = coord(18, 22)
@@ -23,12 +23,12 @@ function build(id: RegionId, name: string, sub: string, w: number, h: number, se
     }
   }
   const prop = (kind: Decor, x: number, y: number, variant=0, solid=false) => { m.props.push({kind,...coord(x,y),variant,solid}); if(solid) {
-    const xr = kind==='house'?2:kind==='well'?1:0, ya = kind==='house'?2:kind==='well'?1:0
+    const xr = kind==='wardhall'?3:kind==='house'||kind==='balcony'?2:kind==='well'||kind==='shelf'||kind==='organ'?1:0, ya = kind==='wardhall'?4:kind==='house'||kind==='balcony'?2:kind==='well'?1:0
     for(let j=Math.floor(y)-ya;j<=Math.floor(y);j++) for (let i=Math.floor(x)-xr;i<=Math.floor(x)+xr;i++) if(i>0&&i<w&&j>0&&j<h) m.blocked[j*w+i]=true
   } }
   const feature = (id: string,name: string,kind: Feature['kind'],x: number,y: number, extra: Partial<Feature>={}) => { m.features.push({id,name,kind,...coord(x,y),...extra}) }
   const exit = (id:string,name:string,x:number,y:number,region:RegionId,tx:number,ty:number,needs?:string) => feature(id,name,'exit',x,y,{to:{region,...coord(tx,ty)},needs})
-  const spawn = (id: EnemyId, points: number[][]) => points.forEach(([x,y]) => m.spawns.push({id,key:`${m.id}-${m.spawns.length}`,...coord(x,y)}))
+  const spawn = (id: EnemyId, points: number[][], entry?:Spawn['entry']) => points.forEach(([x,y]) => m.spawns.push({id,key:`${m.id}-${m.spawns.length}`,...coord(x,y),entry}))
   const flora = (amount:number, allow:(x:number,y:number)=>boolean, pines=.65) => {
     const rng=random(seed*129)
     for(let i=0;i<amount*5 && amount>0;i++) { const x=1+Math.floor(rng()*(w-2)), y=1+Math.floor(rng()*(h-2));
@@ -60,6 +60,7 @@ const village = (()=>{
   prop('crate',31,20,0);prop('crate',32,20,1);prop('oak',15,17,2,true);prop('oak',29,25,0,true)
   feature('tarek','Captain Tarek','npc',22,18,{palette:0}); feature('lyra','Lyra','npc',11,16,{palette:1}); feature('corin','Corin · Merchant','npc',30,21,{palette:2})
   feature('mara','Mara · Blacksmith','npc',31,14,{palette:3}); feature('bess','Bess · Lampkeeper','npc',13,24,{palette:2}); feature('ellan','Ellan','npc',19,28,{palette:4})
+  feature('echo-bellrope','Weathered Bellrope','inspect',25,17,{icon:'echo'});
   feature('vigil','Wayside Shrine','shrine',20,23); feature('cache-village','Abandoned Footlocker','chest',8,29,{item:'ring'})
   exit('to-road','Whisperpine Road',54,22,'road',5,22,'q1'); exit('to-pass','Ashen Pass',51,32,'pass',6,17,'q10')
   spawn('omen',[[16,20]]); flora(157,(x,y)=>x<8||x>34||y<8||y>30||((x<16||x>27)&&y!==18),.49)
@@ -91,6 +92,7 @@ const forest = (()=>{
   prop('arch',60,13,1);prop('column',52,15,2,true);prop('column',57,18,1,true);prop('column',61,15,0,true);prop('crate',42,31);prop('banner',22,26,1)
   feature('guard','Wounded Sentinel','npc',20,29,{palette:0});feature('forest-shrine','Sentinel’s Shrine','shrine',23,29)
   feature('dispatch','Lost Dispatch','loot',42,30,{item:'dispatch',needs:'q6'});feature('ruin','Oath Gate','inspect',57,15,{needs:'q8'})
+  feature('echo-sap','Amber Handprint','inspect',41,15,{icon:'echo'});
   feature('cache-forest','Overgrown Coffer','chest',37,14,{item:'onyx'});feature('ore-forest','Pine-Iron Vein','loot',39,33,{item:'ore'});feature('herb-forest','Moonmint','loot',18,28,{item:'herb'})
   exit('to-road','Whisperpine Road',3,25,'road',59,17);exit('to-spire','The Fallen Spire',60,13,'spire',6,23,'q8')
   spawn('wolf',[[11,25],[15,28],[26,24],[30,27],[37,26],[47,25]]);spawn('spider',[[31,32],[44,30],[46,14]]);spawn('wisp',[[36,18],[52,19]]);spawn('bandit',[[40,29]])
@@ -112,16 +114,73 @@ const spire = (()=>{
   return finish()
 })()
 const pass = (()=>{
-  const {ellipse,road,prop,feature,exit,spawn,flora,finish}=build('pass','Ashen Pass','Chapter II · A kingdom under shadow',37,31,772,'snow')
+  const {ellipse,road,prop,feature,exit,spawn,flora,finish}=build('pass','Ashen Pass','The last watch before the capital',37,31,772,'snow')
   ellipse(14,9,6,5,'abyss');ellipse(27,22,6,7,'abyss');road([[3,17],[12,17],[18,14],[24,13],[29,9],[31,6]],2.25)
   prop('arch',31,7,2);prop('crystal',27,10,2);prop('rock',22,13,1,true);prop('banner',30,10,2)
   feature('horizon','Kingdom Overlook','inspect',31,9);feature('cache-pass','Wayfarer’s Gift','chest',28,13,{item:'sigil'});exit('to-village','Lumenford Village',4,17,'village',49,30)
-  spawn('wisp',[[20,11],[25,12]]);flora(71,()=>true);return finish()
+  feature('veyra','Veyra','npc',29,9);feature('echo-ridge','A Watchman’s Locket','inspect',19,15,{icon:'echo'});feature('pass-shrine','Waywatch Shrine','shrine',10,17)
+  exit('to-capital','Vesperhold · Lantern Ward',31,6,'capital',6,31,'q11')
+  spawn('siltmaw',[[21,11]]);spawn('bellwing',[[25,12]]);flora(71,()=>true);return finish()
 })()
-export const MAPS: Record<RegionId,MapDef> = { village,road,forest,spire,pass }
+const capital = (()=>{
+  const {rect,ellipse,road,prop,feature,exit,finish}=build('capital','Vesperhold','The Lantern Ward · Capital of the Crown',57,40,937,'wall')
+  rect(3,6,51,31,'cobbles'); rect(1,23,55,4,'water')
+  rect(13,22,4,6,'stone');rect(33,22,5,6,'marble');rect(49,22,3,6,'stone')
+  road([[4,31],[18,30],[35,30],[50,31]],2,'stone');road([[15,20],[26,18],[35,17],[49,16]],2,'stone')
+  ellipse(31,18,9,3.8,'marble');rect(31,10,7,5,'stone');rect(47,12,6,5,'slate');rect(8,32,7,3,'slate')
+  ellipse(8,17,4,3.5,'moss');ellipse(47,34,6,2.5,'moss');ellipse(25,9,4.6,2.2,'moss')
+  ;[[8,12,0],[15,12,1],[22,13,2],[43,12,1],[7,28,2],[20,34,1],[31,35,0],[42,34,2],[52,35,0]].forEach(([x,y,v])=>prop('balcony',x,y,v,true))
+  prop('wardhall',35,12,0,true);prop('organ',50,12,0,true);prop('lift',11,33,0);prop('arch',5,31,2)
+  ;[[5,32],[11,29],[22,28],[27,33],[33,28],[38,28],[47,29],[12,20],[19,21],[24,16],[30,15],[37,16],[42,18],[51,19]].forEach(([x,y],i)=>prop('lamp',x,y,i%3))
+  ;[[10,27,0],[27,25,1],[45,25,0]].forEach(([x,y,v])=>prop('skiff',x,y,v))
+  ;[[24,33,1],[27,29,0],[39,31,2],[17,18,1],[44,20,0]].forEach(([x,y,v])=>prop('stall',x,y,v))
+  ;[[8,17,1],[41,8,2],[52,31,0],[24,9,2],[46,33,1]].forEach(([x,y,v])=>prop('oak',x,y,v,true))
+  prop('well',29,20,1,true);prop('banner',31,15,2);prop('banner',40,15,2);prop('crate',12,35,2)
+  feature('city-shrine','Lantern Refuge','shrine',27,31);feature('mira','Mira','npc',19,30);feature('echo-door','Mira’s Doorframe','inspect',22,31,{icon:'echo'});
+  feature('veyra-city','Veyra','npc',17,18,{needs:'q11'});feature('iona','Archivist Iona','npc',35,16)
+  feature('census-stone','Census of the Living','inspect',25,19,{icon:'plaque'});feature('gatekeeper','Crown Gatekeeper','npc',47,16)
+  feature('ren','Provisioner Ren','npc',40,30);feature('forge-city','Cinder & Nail','npc',11,19)
+  exit('to-pass','Ashen Pass',4,31,'pass',30,7)
+  feature('archive-steps','Archive · Public Stair','exit',50,15,{to:{region:'archive',...coord(48,34)},needs:'q12',entry:'warned'})
+  feature('archive-culvert','Archive · Quiet Culvert','exit',11,34,{to:{region:'archive',...coord(9,34)},needs:'q12',entry:'hidden'})
+  return finish()
+})()
+const archive = (()=>{
+  const {rect,ellipse,prop,feature,exit,spawn,finish}=build('archive','The Drowned Archive','The names the water kept',56,41,757,'wall')
+  rect(5,25,46,13,'slate');rect(5,31,46,5,'stone');rect(9,6,40,14,'slate');rect(15,10,30,5,'stone')
+  rect(3,19,50,6,'water');rect(26,15,7,15,'marble');rect(26,20,7,3,'grate')
+  ellipse(18,29,3.2,2.2,'water');ellipse(39,32,3.5,2.2,'water');ellipse(16,10,3.1,1.6,'water');ellipse(43,17,3,1.75,'water')
+  prop('arch',29,25,2);prop('arch',29,18,2);prop('organ',32,10,1,true);prop('lift',45,8,1)
+  ;[[7,29,1],[12,31,0],[20,32,2],[24,27,1],[36,27,0],[43,30,2],[48,29,1],[12,13,0],[19,8,1],[22,17,2],[38,8,0],[38,15,1]].forEach(([x,y,v])=>prop('shelf',x,y,v,true))
+  ;[[10,28],[13,24],[22,27],[26,25],[32,25],[44,24],[47,36],[25,15],[33,15],[36,10],[44,11]].forEach(([x,y],i)=>prop('lamp',x,y,i%3))
+  ;[[17,23],[22,19],[39,23],[48,20],[10,18],[24,10],[9,35]].forEach(([x,y],i)=>prop('crystal',x,y,i%3))
+  feature('archive-shrine','Siltlight Shrine','shrine',29,34);feature('echo-letter','Dry Envelope','inspect',14,8,{icon:'echo'});feature('echo-watch','Unfinished Watch Roster','inspect',20,14,{icon:'echo'})
+  feature('west-wheel','West Water Wheel','inspect',12,26,{icon:'wheel',needs:'q13'});feature('east-wheel','East Water Wheel','inspect',45,26,{icon:'wheel',needs:'q13'})
+  feature('sealing-press','Sealing Press','inspect',33,12,{icon:'plaque'});feature('seris-archive','Seris','npc',39,12,{needs:'q14'})
+  feature('bronze-culvert','Bronze Drain Basket','chest',7,35,{item:'archive-bronze',entry:'hidden'});
+  feature('bronze-steps','Crown Supply Chest','chest',49,35,{item:'hp',entry:'warned'});
+  exit('to-capital','Back to the Lantern Ward',27,36,'capital',27,31);exit('archive-lift','Lift to the Lantern Ward',45,8,'capital',36,15,'q15')
+  exit('to-bellvault','Vault of the Last Bell',46,10,'bellvault',26,33,'q14')
+  spawn('bailiff',[[45,33],[41,34]],'warned');spawn('siltmaw',[[12,34]],'hidden')
+  spawn('siltmaw',[[19,25],[35,30],[17,13]]);spawn('bellwing',[[24,26],[35,26],[24,13]]);spawn('archiveHusk',[[29,15]])
+  return finish()
+})()
+const bellvault = (()=>{
+  const {rect,ellipse,prop,feature,exit,spawn,finish}=build('bellvault','Vault of the Last Bell','There was a second watchman',52,38,1187,'wall')
+  rect(7,6,38,25,'abyss');rect(13,8,27,22,'slate');rect(16,10,21,18,'marble');ellipse(26,20,9,6.2,'stone');
+  rect(23,27,7,9,'grate');rect(20,31,13,5,'slate');rect(23,31,7,5,'marble')
+  ;[[14,10],[14,17],[14,25],[38,10],[38,17],[38,25]].forEach(([x,y],i)=>prop('column',x,y,i%3,true))
+  ;[[11,13],[12,23],[17,12],[36,12],[37,21],[21,28],[31,28],[20,32],[32,32]].forEach(([x,y],i)=>prop(i%3===0?'lamp':'crystal',x,y,i%3))
+  prop('bell',26,12,0,true);prop('banner',19,11,2);prop('banner',33,11,2);prop('arch',26,28,2)
+  feature('vault-shrine','Last Watch Shrine','shrine',23,32);feature('bell-altar','Altar of the Last Bell','inspect',26,13.5,{icon:'altar'});feature('echo-bell','Maker’s Mark','inspect',33,14,{icon:'echo'})
+  exit('to-archive','The Drowned Archive',26,35,'archive',45,12);spawn('hollow',[[26,18]])
+  return finish()
+})()
+export const MAPS: Record<RegionId,MapDef> = { village,road,forest,spire,pass,capital,archive,bellvault }
 export function tileBlocked(map:MapDef,x:number,y:number,gate=false) {
   if(x<1||y<1||x>=map.w-1||y>=map.h-1)return true
   if(map.id==='spire'&&!gate&&(x===37||x===38)&&y>=20&&y<=24)return true
   const i=y*map.w+x, t=map.tiles[i]
+  if(map.id==='archive'&&t==='grate'&&!gate)return true
   return map.blocked[i]||t==='wall'||t==='water'||t==='abyss'
 }

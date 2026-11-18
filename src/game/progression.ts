@@ -1,7 +1,7 @@
-import { ROLES } from '../data/classes'
+import { COMPANIONS, ROLES } from '../data/classes'
 import { ITEMS } from '../data/items'
 import { MAPS, VILLAGE_START } from '../data/maps'
-import { ATTRIBUTES, type Attributes, type Character, type Companion, type Settings, type Save, type ClassId } from './types'
+import { ATTRIBUTES, type Attributes, type Character, type Companion, type CompanionId, type Settings, type Save, type ClassId } from './types'
 
 export const defaultSettings: Settings = { master:.65, music:.45, effects:.75, mute:true, motion:true, difficulty:'Adventure', controls:'Auto' }
 export const clamp = (n:number,min:number,max:number)=>Math.max(min,Math.min(max,n))
@@ -31,6 +31,11 @@ export function statsOf(save:Save,actor:Character) {
     magical:9+a.INT*1.40+a.SPI*.45+attack+level, defense:2+a.VIT*.65+armor, mdef:2+a.SPI*.70+armor*.44, speed:70+Math.min(a.DEX*.90,32),
     pace:Math.max(.39,role.pace-a.DEX*.006), crit:Math.min(.34,.025+a.DEX*.0045), critPower:1.65, accuracy:Math.min(.995,.91+a.DEX*.004),
     evasion:Math.min(.2,.02+a.DEX*.002), resistance:Math.min(.37,a.SPI*.0034), healing:18+a.SPI*2.5+a.INT*.5 }
+}
+export function makeCompanion(save:Save,id:CompanionId):Companion {
+  const d=COMPANIONS[id],c:Companion={classId:d.classId,skin:d.skin,dye:d.dye,style:d.style,mode:d.mode,level:save.level,hp:0,mp:0,id,equipment:{Weapon:{id:ROLES[d.classId].weapon,qty:1,plus:0},Chest:{id:'coat',qty:1,plus:0}}}
+  const stats=statsOf(save,c);c.hp=stats.maxHp;c.mp=stats.maxMp
+  return c
 }
 export function gainXp(s:Save,amount:number) {
   if(s.level>=LEVEL_CAP)return 0
