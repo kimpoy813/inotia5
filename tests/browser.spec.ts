@@ -9,6 +9,24 @@ import { advanceTo, legacyEnding } from './fixtures/journeys'
 
 const canvas = '[data-testid="world"] canvas'
 const marker = '.map-surface--small svg g[transform]'
+const saved = (page:Page,slot=1)=>page.evaluate(slot=>JSON.parse(localStorage.getItem(`veilbound-save-${slot}`)??'null') as Save|null,slot)
+const stored = (page:Page,slot=1)=>page.evaluate(slot=>new Promise<Save|null>((resolve,reject)=>{
+  const open=indexedDB.open('veilbound-chronicles',1)
+  open.onerror=()=>reject(open.error)
+  open.onsuccess=()=>{
+    const db=open.result
+    const get=db.transaction('slots').objectStore('slots').get(slot)
+    get.onsuccess=()=>{resolve(get.result??null);db.close()}
+    get.onerror=()=>{reject(get.error);db.close()}
+  }
+}),slot)
+async function expectScene(page:Page,name:string,art:string){
+  await expect(page.getByRole('heading',{name,exact:true})).toBeVisible()
+  const image=page.locator('.opening-illustration img')
+  await expect(image).toHaveAttribute('src',art)
+  await expect.poll(()=>image.evaluate((el:HTMLImageElement)=>el.naturalWidth)).toBeGreaterThan(0)
+  await expect(page.locator(canvas)).toHaveCount(0)
+}
 const create = async (p:Page,name:string,className:string) => {
   await p.goto('/')
   await expect(p.getByRole('heading',{name:'Eclipse of the Veil'})).toBeVisible()
@@ -17,7 +35,8 @@ const create = async (p:Page,name:string,className:string) => {
   await expect(p.locator('.class-option')).toHaveCount(6)
   await p.getByRole('button',{name:new RegExp(className,'i')}).click()
   await p.getByLabel('Character name').fill(name)
-  await p.getByRole('button',{name:'Begin Adventure'}).click()
+  await p.getByRole('button',{name:'Begin Prologue',exact:true}).click()
+  await p.getByRole('button',{name:'Skip prologue',exact:true}).click()
   await p.locator(canvas).waitFor()
 }
 function captureErrors(p:Page) {
@@ -33,7 +52,7 @@ async function axis(p:Page,i:0|1,to:number) {
   finally{await p.keyboard.up(key)}
 }
 
-test('reference art: class portraits, live sprite animation and real pixel action icons',async({page},info)=>{
+test('hero art and prologue: read three scenes before the first save and gameplay',async({page},info)=>{
   const errors=captureErrors(page)
   await page.goto('/')
   await expect(page.locator('.title-art')).toHaveCSS('background-image',/crimson-eclipse\.webp/)
@@ -54,8 +73,24 @@ test('reference art: class portraits, live sprite animation and real pixel actio
   await page.getByRole('button',{name:/Black Knight/}).click()
   await expect(page.getByRole('button',{name:'Crimson',exact:true})).toHaveAttribute('aria-pressed','true')
   await page.getByLabel('Character name').fill('Aster')
-  await page.getByRole('button',{name:'Begin Adventure'}).click()
+  await page.getByRole('button',{name:'Begin Prologue',exact:true}).click()
+  await expectScene(page,'The Morning Bell','/art/opening/lumen-ridge.webp')
+  await expect(page.getByRole('button',{name:'Previous scene'})).toBeDisabled()
+  await expect(page.locator('.opening-hero')).toContainText('Aster')
+  expect(await saved(page)).toBeNull();expect(await stored(page)).toBeNull()
+  await page.evaluate(()=>document.fonts.ready.then(()=>null));await page.screenshot({path:info.outputPath('prologue.png'),animations:'disabled'})
+  await page.getByRole('button',{name:'Go to the gate',exact:true}).click()
+  await expectScene(page,'The Empty Line','/art/opening/watchbook.webp')
+  await page.screenshot({path:info.outputPath('watchbook.png'),animations:'disabled'})
+  await page.getByRole('button',{name:'Previous scene'}).click()
+  await expect(page.getByRole('heading',{name:'The Morning Bell'})).toBeFocused()
+  await page.keyboard.press('ArrowRight');await expect(page.getByRole('heading',{name:'The Empty Line'})).toBeFocused()
+  await page.getByRole('button',{name:'Follow the sound',exact:true}).click()
+  await expectScene(page,'The Mark Answers','/art/lumenford.webp')
+  expect(await saved(page)).toBeNull();expect(await stored(page)).toBeNull()
+  await page.getByRole('button',{name:'Enter Lumenford',exact:true}).click()
   await page.locator(canvas).waitFor()
+  await expect.poll(()=>stored(page)).toMatchObject({name:'Aster',region:'village',tracked:'q1',quests:{q1:{progress:[0,0]}}})
   const skill=page.getByRole('button',{name:'Use Night Slash'}).locator('canvas')
   await expect.poll(()=>skill.evaluate((c:HTMLCanvasElement)=>c.getContext('2d')!.getImageData(0,0,c.width,c.height).data.some((n,i)=>i%4===3&&n>0))).toBe(true)
   await expect(page.getByRole('heading',{name:'Lumenford Village'})).toBeVisible()
@@ -82,7 +117,13 @@ test('portrait touch: the full roster and game menus remain reachable',async({br
     await page.getByRole('button',{name:/Warlock/}).tap()
     const attack=page.getByRole('button',{name:'Attack',exact:true});await attack.tap();await expect(attack).toHaveAttribute('aria-pressed','true')
     expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390)
-    await page.getByRole('button',{name:'Begin Adventure'}).tap();await page.locator(canvas).waitFor()
+    await page.getByRole('button',{name:'Begin Prologue',exact:true}).tap()
+    await expectScene(page,'The Morning Bell','/art/opening/lumen-ridge.webp')
+    await page.getByRole('button',{name:'Go to the gate',exact:true}).tap()
+    await expectScene(page,'The Empty Line','/art/opening/watchbook.webp')
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390)
+    await page.screenshot({path:info.outputPath('portrait-prologue.png'),animations:'disabled'})
+    await page.getByRole('button',{name:'Skip prologue',exact:true}).tap();await page.locator(canvas).waitFor()
     const inventory=page.getByRole('button',{name:'Inventory',exact:true}),bag=(await inventory.boundingBox())!,bar=(await page.locator('.action-strip').boundingBox())!
     expect(bag.y+bag.height).toBeLessThan(bar.y)
     await page.screenshot({path:info.outputPath('portrait-touch.png')})
@@ -110,6 +151,10 @@ test('portrait touch: the full roster and game menus remain reachable',async({br
   await page.keyboard.press('e')
   await expect(page.getByRole('dialog',{name:'Conversation with Captain Tarek'})).toBeVisible()
   await page.getByRole('button',{name:/Report: An Unexpected Awakening/}).click()
+  await expect(page.getByRole('dialog',{name:'Conversation with Captain Tarek'})).toContainText('riderless horse')
+  await page.keyboard.press('Escape');await page.keyboard.press('j')
+  await page.getByRole('button',{name:'Memories',exact:true}).click()
+  await expect(page.getByRole('heading',{name:'The Empty Line',exact:true})).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.locator('.quest-widget')).toContainText('Trouble at the Eastern Road')
   await expect(page.locator('.vitals-name')).toContainText('Lv. 2')
@@ -135,8 +180,7 @@ test('portrait touch: the full roster and game menus remain reachable',async({br
   await expect(page.getByRole('heading',{name:'Whisperpine Road'})).toBeVisible()
   await expect(page.locator('.vitals-name')).toContainText('Eira')
   await expect(page.locator(marker)).toHaveAttribute('transform',`translate(${record.x/16} ${record.y/16}) rotate(180)`)
-  const idb=await page.evaluate(()=>new Promise(resolve=>{const r=indexedDB.open('veilbound-chronicles',1);r.onsuccess=()=>{const t=r.result.transaction('slots').objectStore('slots').get(1);t.onsuccess=()=>{resolve(t.result?.name);r.result.close()};t.onerror=()=>resolve(null)};r.onerror=()=>resolve(null)}))
-  expect(idb).toBe('Eira');expect(errors).toEqual([])
+  await expect.poll(()=>stored(page)).toMatchObject({name:'Eira',region:'road'});expect(errors).toEqual([])
 })
 
  test('landscape touch: virtual stick moves the world, target and attack work, menus fit',async({browser})=>{
@@ -189,12 +233,15 @@ test('portrait touch: the full roster and game menus remain reachable',async({br
   expect(errors).toEqual([])
 })
 
-const saved = (page:Page,slot=1)=>page.evaluate(slot=>JSON.parse(localStorage.getItem(`veilbound-save-${slot}`)??'null') as Save|null,slot)
-async function importJourney(page:Page,record:Save){
+async function importSlot(page:Page,record:Save){
   await page.getByRole('button',{name:'Load Game',exact:true}).click()
   await page.locator('input[type="file"]').setInputFiles({name:'chapter-one.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(record))})
   await expect(page.getByText(new RegExp(`Ready to import ${record.name}`))).toBeVisible()
   await page.getByRole('button',{name:'Import to Slot'}).click()
+  await expect(page.getByRole('status')).toContainText(`Imported ${record.name} into slot 1`)
+}
+async function importJourney(page:Page,record:Save){
+  await importSlot(page,record)
   await page.getByRole('button',{name:'Load',exact:true}).click()
   await page.locator(canvas).waitFor()
 }
@@ -216,13 +263,58 @@ async function readScene(page:Page){
   await expect(dialog).toBeHidden()
 }
 
+test('offline opening: back keeps the hero draft and does not replace an occupied slot',async({page,context})=>{
+  const errors=captureErrors(page),old=createSave('Earlier Journey','warlock',1,2,0)
+  await page.emulateMedia({reducedMotion:'reduce'})
+  await page.goto('/');await importSlot(page,old);await page.getByRole('button',{name:'Close',exact:true}).click()
+  const before=await saved(page),dbBefore=await stored(page)
+  expect(before?.name).toBe(old.name);expect(dbBefore).toEqual(before)
+  await page.waitForFunction(()=>!!navigator.serviceWorker.controller)
+  await context.setOffline(true);await page.reload()
+  const resume=page.getByRole('button',{name:'Continue',exact:true})
+  await expect(resume).toContainText('Earlier Journey')
+  await page.getByRole('button',{name:'New Game',exact:true}).click()
+  await expect(page.getByLabel('Save slot')).toHaveValue('2')
+  await page.getByLabel('Save slot').selectOption('1')
+  await page.getByLabel('Character name').fill('A New Dawn')
+  await page.getByRole('button',{name:/Ranger/}).click()
+  await page.getByRole('button',{name:'Silver',exact:true}).click()
+  await page.getByRole('button',{name:'Complexion 3',exact:true}).click()
+  await page.getByRole('button',{name:'Long',exact:true}).click()
+  const begin=page.getByRole('button',{name:'Begin Prologue',exact:true}),confirm=page.getByRole('button',{name:'Confirm slot & read story',exact:true})
+  await begin.click();await expect(page.getByRole('status')).toContainText('will be replaced only when you enter the world')
+  await confirm.click();await expectScene(page,'The Morning Bell','/art/opening/lumen-ridge.webp')
+  await page.getByRole('button',{name:'Go to the gate',exact:true}).click();await expectScene(page,'The Empty Line','/art/opening/watchbook.webp')
+  expect(await saved(page)).toEqual(before);expect(await stored(page)).toEqual(dbBefore)
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('heading',{name:'Create Your Veilbound'})).toBeFocused()
+  await expect(page.getByLabel('Character name')).toHaveValue('A New Dawn')
+  await expect(page.getByLabel('Save slot')).toHaveValue('1')
+  await expect(page.getByRole('button',{name:/Ranger/})).toHaveAttribute('aria-pressed','true')
+  for(const name of ['Silver','Complexion 3','Long'])await expect(page.getByRole('button',{name,exact:true})).toHaveAttribute('aria-pressed','true')
+  expect(await saved(page)).toEqual(before);expect(await stored(page)).toEqual(dbBefore)
+  await begin.click();await confirm.click();await expectScene(page,'The Morning Bell','/art/opening/lumen-ridge.webp')
+  await page.getByRole('button',{name:'Skip prologue',exact:true}).click()
+  await page.locator(canvas).waitFor();await expect(page.getByRole('heading',{name:'Lumenford Village'})).toBeVisible()
+  await expect.poll(()=>stored(page)).toMatchObject({name:'A New Dawn',hero:{classId:'ranger',dye:5,skin:2,style:1},region:'village'})
+  await page.reload();await expect(resume).toContainText('A New Dawn');await resume.click();await page.locator(canvas).waitFor()
+  await expect(page.locator('.opening-screen')).toHaveCount(0)
+  await expect(page.locator('.vitals-name')).toContainText('A New Dawn');expect(errors).toEqual([])
+})
+
 test('a Chapter I save opens Vesperhold, keeps its shard decision and continues offline',async({page,context},info)=>{
   const errors=captureErrors(page),old=legacyEnding('ranger','warned','pass','Story')
   Object.assign(old,coord(29,10));await page.goto('/')
   await page.evaluate(()=>document.fonts.ready.then(()=>null));await page.screenshot({path:info.outputPath('title.png')})
   await page.getByRole('button',{name:'Open Chronicle'}).click()
   await expect(page.getByRole('heading',{name:'The Bell Below'})).toBeVisible()
-  await page.getByRole('button',{name:'Read the Prologue'}).click();await expect(page.getByRole('heading',{name:'The Morning Bell'})).toBeVisible()
+  await page.getByRole('button',{name:'Read the Prologue'}).click();await expectScene(page,'The Morning Bell','/art/opening/lumen-ridge.webp')
+  await expect(page.getByRole('button',{name:'Skip prologue',exact:true})).toHaveCount(0)
+  await page.keyboard.press('ArrowRight');await expect(page.getByRole('heading',{name:'The Empty Line'})).toBeFocused()
+  await page.keyboard.press('ArrowRight');await expect(page.getByRole('heading',{name:'The Mark Answers'})).toBeFocused()
+  await page.getByRole('button',{name:'Return to Chronicle',exact:true}).click()
+  await expect(page.getByRole('dialog',{name:'Chronicle',exact:true})).toBeVisible()
+  expect(await saved(page)).toBeNull();expect(await stored(page)).toBeNull()
   await page.getByRole('button',{name:'Close',exact:true}).click()
   await importJourney(page,old)
   await expect(page.getByRole('heading',{name:'Ashen Pass'})).toBeVisible()
@@ -265,7 +357,15 @@ test('touch Chapter II start creates a separate journey and records Veyra in the
     await page.getByRole('button',{name:'Open Chronicle'}).tap();await page.getByRole('button',{name:'Start in Chapter II'}).tap()
     await expect(page.getByLabel('Save slot')).toHaveValue('2')
     await page.getByLabel('Character name').fill('Vesper')
-    await page.getByRole('button',{name:'Begin Chapter II'}).tap();await page.locator(canvas).waitFor()
+    await page.getByRole('button',{name:'Read Chapter I Recap',exact:true}).tap()
+    await expectScene(page,'What the Roots Kept','/art/eclipse-title.webp')
+    expect(await saved(page,2)).toBeNull();expect(await stored(page,2)).toBeNull()
+    await page.getByRole('button',{name:'Take the north road',exact:true}).tap()
+    await expectScene(page,'Snow on the Pass','/art/opening/ashen-overlook.webp')
+    const enter=page.getByRole('button',{name:'Enter Ashen Pass',exact:true}),action=(await enter.boundingBox())!
+    expect(action.y+action.height).toBeLessThanOrEqual(390)
+    await page.screenshot({path:info.outputPath('ashen-recap.png'),animations:'disabled'})
+    await enter.tap();await page.locator(canvas).waitFor()
     await expect(page.getByRole('heading',{name:'Ashen Pass'})).toBeVisible();await expect(page.locator('.vitals-name')).toContainText('Lv. 6')
     const pad=page.getByRole('button',{name:'Movement joystick'}),box=(await pad.boundingBox())!,cdp=await context.newCDPSession(page)
     await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:box.x+box.width*.65,y:box.y+box.height*.19,id:1}]})

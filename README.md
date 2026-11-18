@@ -4,15 +4,24 @@
 
 ![The new title menu, with the party beneath a crimson eclipse](docs/title.webp)
 
-The art refresh uses the supplied pixel-art showcase as visual direction: a crimson-eclipse cover, six illustrated classes, four-direction character sprites, more detailed terrain, and gold-framed pixel icons. The artwork is new; the game still plays the same two chapters and reads existing saves.
+New journeys start with an illustrated story. The Chapter I prologue follows a riderless horse, an erased name, and the first bell in Lumenford. Free CC0 pixel art is adapted for the opening plates, foliage, and terrain across both chapters, alongside the original sprites, portraits, and crimson-eclipse cover.
+
+![The Morning Bell, the first illustrated scene of the prologue](docs/prologue.webp)
+
+See the [portrait prologue](docs/prologue-touch.webp) and [Chapter II recap](docs/ashen-recap.webp) on touch layouts.
 
 ![Character creation: class art beside the customizable in-world sprite](docs/creation.webp)
 
 ## Play
 
-Use the **Eclipse of the Veil** Arena preview, or run the game locally. For the full story, choose **New Game**. To jump to the new chapter, select **The Bell Below** card on the title screen, then **Start in Chapter II** in the Chronicle. You get a level-six hero in Ashen Pass with four learned skills, Tarek, Lyra, and the Oath Shard. This makes a new journey in a slot you select and asks for confirmation before replacing any occupied slot. Speak to Veyra near the overlook and decide what to tell the Crown.
+Use the **Eclipse of the Veil** Arena preview, or run the game locally.
 
-**Continuing an existing journey?** No restart is required. Use **Continue** on the same origin or **Load Game → Import Save** with a Chapter I export. Finished Chapter I saves get **A Bell for the Living** in the journal. Follow the gold markers to Ashen Pass. If the earlier shard choice was left unanswered, Veyra asks for it there. On a different preview URL, export from the old one and import into the new one; browser saves do not travel between origins automatically.
+- **Chapter I:** Choose **New Game**, create your hero, then **Begin Prologue**. Read the three scenes before entering Lumenford, or choose **Skip prologue**. You can reread the story later with **Chronicle → Read the Prologue** without starting a save.
+- **Chapter II:** Choose **Chronicle → Start in Chapter II**, create a hero, then **Read Chapter I Recap**. Read or skip the recap to arrive in Ashen Pass at level six with four learned skills, Tarek, Lyra, and the Oath Shard. Speak to Veyra near the overlook and decide what to tell the Crown.
+
+An occupied slot requires confirmation. Nothing is saved or overwritten until you enter the world. You can go back from the story without losing the hero you were setting up.
+
+**Continuing an existing journey?** **Continue** and **Load Game** resume gameplay without replaying the opening. Use **Load Game → Import Save** to bring in an export, including from Chapter I. Finished Chapter I saves get **A Bell for the Living** in the journal. Follow the gold markers to Ashen Pass. If the earlier shard choice was left unanswered, Veyra asks for it there. On a different preview URL, export from the old one and import into the new one; browser saves do not travel between origins automatically.
 
 ![Actual gameplay in Vesperhold’s Lantern Ward](docs/vesperhold.webp)
 
@@ -32,13 +41,13 @@ npm run build       # Type check, static dist/, and versioned offline cache
 npm run preview     # Serve the production build to test offline support
 ```
 
-After the production title screen says **Offline ready**, a cached installation can reload and continue without a connection. Supported browsers may offer **Install** or **Add to Home Screen**. Service workers require HTTPS or `localhost`; after an update, close old game tabs before reopening to give the new worker a chance to activate. Saves live in three local IndexedDB slots with a localStorage safety mirror. Use **Pause → Export Save** to back up a journey. Audio starts muted; use the sound switch to hear the original score and effects.
+After the production title screen says **Offline ready**, the story, art, and both chapters can start or resume without a connection. Supported browsers may offer **Install** or **Add to Home Screen**. Service workers require HTTPS or `localhost`; after an update, close old game tabs before reopening to give the new worker a chance to activate. Saves live in three local IndexedDB slots with a localStorage safety mirror. Use **Pause → Export Save** to back up a journey. Audio starts muted; use the sound switch to hear the original score and effects.
 
 ### Controls
 
 | Desktop | Action |
 | --- | --- |
-| WASD / arrow keys | Move |
+| WASD / arrow keys | Move; left/right arrows turn pages in the opening |
 | Left click | Walk to a point, approach an interaction, or engage an enemy |
 | Tab / F | Cycle visible targets / auto-attack the target |
 | 1–6 | Use a learned class skill |
@@ -58,6 +67,7 @@ On touch, use the joystick and action buttons or tap the world. Landscape gives 
 | --- | --- |
 | Chapters | The Broken Seal and The Bell Below, **16 main quests**, **6 side quests**, and **8 connected maps** |
 | Chapter II | Rainlit Vesperhold, the Drowned Archive’s two-wheel floodgate, and the Vault of the Last Bell. The shard decision changes the entrance, encounters, and dialogue. A separate ending changes how the city handles the recovered names and which accessory you earn. |
+| Opening | Three Chapter I prologue scenes, a two-scene Chapter II recap, and a read-only story in the Chronicle. The first quest records Bess’s watchbook in the journal. |
 | Characters | Recruit Captain Tarek, Lyra, and Veyra. Bring two companions, switch control, and set their tactics. Illustrated scenes bring Seris, Archivist Iona, and Malrec into the story. |
 | Field journal | Track quests, read discovered memories, look up people, and check the bestiary for combat tells. |
 | Encounters | **16 enemy types**, including Siltmaw charge lanes, Bellwing projectile fans, Crown Bailiff frontal guard, the Archive Husk, and two three-phase bosses. Look for the safe centre or outer edge of the Hollow Knight’s ring. |
@@ -75,9 +85,17 @@ More gameplay: [Lumenford Village](docs/lumenford.webp) · [Equipment and invent
 
 - **Phaser** renders the world and handles the camera and world pointer input. Terrain is cached in 16×16-tile chunks. Actors are Y-sorted animated pixel atlases; world entities are not DOM elements.
 - The **TypeScript** simulation ticks independently, with fixed-step combat, A* routing, exact grid line of sight, collision, status effects, gear progression, and persistent quest events. `src/game/patterns.ts` shares telegraph geometry with the gameplay rules.
-- **React** owns the HUD, journal, menus, dialogue, hero creation, and accessible controls. `src/game/audio.ts` provides original Web Audio music and effects.
-- `src/data/` contains maps, dialogue, quests, encounters and lore. `src/game/peopleArt.ts` draws the character atlases, `src/game/pixels.ts` draws terrain and creatures, and `src/game/iconArt.ts` caches pixel icons for the HUD, skills, and gear. `public/art/` holds generated illustrations, portraits, and three scenery sprites with procedural fallbacks. Third-party notices are in [`public/licenses/`](public/licenses/).
+- **React** owns the illustrated opening, hero creation, HUD, journal, menus, dialogue, and accessible controls. `src/game/audio.ts` provides original Web Audio music and effects.
+- `src/data/` contains maps, dialogue, quests, encounters and lore. `src/game/peopleArt.ts` draws the character atlases, `src/game/sceneryArt.ts` maps the local terrain atlas and foliage to existing tiles and props, `src/game/pixels.ts` draws fallback terrain and creatures, and `src/game/iconArt.ts` caches pixel icons for the HUD, skills, and gear. The art refresh does not change map collision.
 - `scripts/service-worker.mjs` fingerprints and precaches the production files. Save validation in `src/game/save.ts` retains Chapter I’s schema and identifiers.
+
+## Pixel-art credits
+
+- **[Mountain at Dusk Background](https://opengameart.org/content/mountain-at-dusk-background)** by Luis Zuno (Ansimuz) — layered landscapes adapted for Lumenford and Ashen Pass.
+- **[Ninja Adventure Asset Pack](https://pixel-boy.itch.io/ninja-adventure-asset-pack)** by Pixel-Boy and AAA — foliage, outdoor and town tiles, and the wood beneath the watchbook.
+- **[16x16 DungeonTileset II](https://0x72.itch.io/dungeontileset-ii)** by 0x72 (Robert Norenberg) — floor tiles for the Spire, Archive, and Vault.
+
+These packs are [CC0](https://creativecommons.org/publicdomain/zero/1.0/). Adapted files are served locally, not hotlinked. See the [asset-by-asset credits](public/licenses/open-pixel-art.md) and [third-party notices](public/licenses/).
 
 ## Validation
 
@@ -91,7 +109,7 @@ npm run test:e2e
 The Playwright suite starts the production preview on port 4317. For an existing browser binary, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`. Set `VEILBOUND_SOFTWARE_CANVAS=1` for a headless environment without WebGL acceleration.
 
 - **35 Vitest tests:** both chapters completed in deterministic simulations on all six classes; one complete Chapter II quick-start run; both archive routes and final decisions; side quests, companions, new telegraphs, gates, save compatibility, and the original skills, combat and economy regressions.
-- **9 Playwright scenarios:** art assets, animated class preview and pixel icons; portrait touch layout; desktop and landscape-touch combat; the Warden and save import/export; an old save entering Vesperhold and resuming offline; the separate Chapter II touch start; crossing the opened Archive grating; and the Last Bell encounter and ending.
+- **10 Playwright scenarios:** the full prologue, read-only Chronicle, art, and Chapter II recap; backing out of a pending overwrite and skipping while offline; portrait and landscape touch; desktop combat and travel; save import/export and Chapter I saves resuming directly; and the Archive and Last Bell encounters.
 - Strict TypeScript and the production build pass. Tests use Chromium, including emulated touch, not a physical-device benchmark or a timed human playthrough. Chapter III and beyond, endgame, and the full planned campaign are not included.
 
 ## Deploy

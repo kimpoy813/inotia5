@@ -5,13 +5,9 @@ export const CHAPTERS = [
   { id:2, numeral:'II', name:'The Bell Below', place:'Vesperhold & the Drowned Archive', art:'/art/vesperhold.webp', detail:'The capital has been keeping peace by taking names out of the world. Cross Ashen Pass and follow the bell that was never meant to ring again.', last:'q16' },
 ] as const
 export const regionChapter=(id:RegionId)=> ['pass','capital','archive','bellvault'].includes(id)?CHAPTERS[1]:CHAPTERS[0]
-export const PROLOGUE = [
-  { art:'/art/lumenford.webp', eyebrow:'Prologue · The Frontier', title:'The Morning Bell', text:'In Lumenford, the bell is a clock, a warning, and sometimes the only person who answers. This morning, it rings before the lampkeeper has even reached the square.' },
-  { art:'/art/eclipse-title.webp', eyebrow:'Chapter I · The Broken Seal', title:'A Name in the Dark', text:'You wake with a mark on your hand and the taste of rain. Something beyond the east gate is saying your name. Not asking. Remembering.' },
-] as const
-
-export type Echo = { id:string; title:string; region:RegionId; art:string; excerpt:string; text:string }
+export type Echo = { id:string; title:string; region:RegionId; art:string; excerpt:string; text:string; afterQuest?:string }
 export const ECHOES: Echo[] = [
+  { id:'echo-watchbook', afterQuest:'q1', title:'The Empty Line', region:'village', art:'/art/opening/watchbook.webp', excerpt:'Prologue · Bess’s watchbook', text:'Bess kept two lanterns lit. One horse came home alone. I watched a name wash out of the book, but the mark on my hand still burns with its shape.' },
   { id:'echo-bellrope', title:'The Last Bellrope', region:'village', art:'/art/lumenford.webp', excerpt:'Lumenford · A lampkeeper’s note', text:'I changed the bellrope in spring. The old one had little cuts in it, one for every time the bell rang without a hand. I counted them as a child until someone taught me not to.' },
   { id:'echo-sap', title:'Before the Bargain', region:'forest', art:'/art/eclipse-title.webp', excerpt:'Hollowwood · A memory in resin', text:'There is a handprint in the sap older than the tree. A child’s voice: “I asked the guardian to remember my name. He said I ought to give him a better one.”' },
   { id:'echo-ridge', title:'A Post Left Empty', region:'pass', art:'/art/vesperhold.webp', excerpt:'Ashen Pass · A soldier’s locket', text:'First watch. Bright frost. Caldus kept the post alone so I could go down the ridge and see my daughter. The roll says there was no second watchman. I remember his boots outside the door.' },
@@ -21,7 +17,10 @@ export const ECHOES: Echo[] = [
   { id:'echo-bell', title:'What a Bell Can Hold', region:'bellvault', art:'/art/bell-sanctum.webp', excerpt:'Vault of the Last Bell · A maker’s mark', text:'A bell can hold a note only while it is moving. We should have known that a city could not hold still forever either.' },
 ]
 export const ECHO_BY_ID=Object.fromEntries(ECHOES.map(e=>[e.id,e])) as Record<string,Echo>
-export const isEchoFound=(save:Save,id:string)=>save.flags[`echo:${id}`]===true
+export function isEchoFound(save:Save,id:string){
+  const quest=ECHO_BY_ID[id]?.afterQuest
+  return save.flags[`echo:${id}`]===true || (!!quest && save.quests[quest]?.state==='done')
+}
 
 export type Person = { id:string; name:string; title:string; bio:string; art?:string; color:string; chapter:1|2 }
 export const PEOPLE:Person[] = [
