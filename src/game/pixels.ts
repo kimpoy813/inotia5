@@ -1,6 +1,7 @@
 import { ENEMIES, type EnemyId } from '../data/enemies'
 import { random, TILE, type Decor, type Ground, type MapDef } from '../data/maps'
 import { SPRITE_FRAMES, atlasCell, box, canvas, line, oval, poly, shade, type Ink } from './pixelInk'
+import { paintTerrain } from './sceneryArt'
 
 function rubble(c:Ink,x:number,y:number,r:()=>number,color:string) {
   const w=4+Math.floor(r()*8);poly(c,'#232e31',[x-1,y+3,x+2,y-3,x+w-3,y-4,x+w,y,x+w-1,y+4]);poly(c,color,[x,y+2,x+2,y-3,x+w-3,y-3,x+w-1,y,x+w-4,y+2]);line(c,shade(color,24),x+1,y,x+3,y-2);box(c,shade(color,-17),x+w-3,y+1,2,2)
@@ -15,11 +16,12 @@ const PALETTES: Record<MapDef['id'],{grass:string; moss:string; path:string; sto
   bellvault:{grass:'#2a4b4c',moss:'#374550',path:'#4b5162',stone:'#595562',night:'#151729',wood:'#615065'},
   pass:{grass:'#536a76',moss:'#405566',path:'#707d80',stone:'#657383',night:'#182639',wood:'#6b7283'},
 }
-export function groundTexture(m:MapDef,tx:number,ty:number,cw:number,ch:number) {
+export function groundTexture(m:MapDef,tx:number,ty:number,cw:number,ch:number,terrainSheet?:CanvasImageSource) {
   const {a,c}=canvas(cw*TILE,ch*TILE),p=PALETTES[m.id]
   const get=(x:number,y:number):Ground|undefined=>x<0||y<0||x>=m.w||y>=m.h?undefined:m.tiles[y*m.w+x]
   for(let y=ty;y<ty+ch;y++)for(let x=tx;x<tx+cw;x++){
     const xx=(x-tx)*16,yy=(y-ty)*16,g=get(x,y)!,r=random((m.seed+x*983+y*1379)*17131),n=Math.floor(r()*9)-4
+    if(terrainSheet&&paintTerrain(c,terrainSheet,m,g,x,y,xx,yy,get))continue
     const patch=(Math.sin(x*.36+y*.72)+Math.cos(x*.91-y*.34))*5
     const col=g==='grass'?p.grass:g==='moss'?p.moss:g==='path'?p.path:g==='stone'?p.stone:g==='slate'?(m.id==='archive'?'#354b59':m.id==='bellvault'?'#3c344e':'#39364b'):g==='water'?m.id==='capital'||m.id==='archive'?'#183f50':'#244956':g==='wall'?p.night:g==='snow'?'#9cadba':g==='abyss'?'#171f2e':g==='cobbles'?'#394b54':g==='marble'?(m.id==='bellvault'?'#534b64':'#556875'):g==='grate'?'#334854':p.wood
     const base=shade(col,Math.round(patch)+n);box(c,base,xx,yy,16,16)

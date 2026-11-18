@@ -492,13 +492,8 @@ kbd { font-family: var(--body); font-size: 10px; font-weight: 700; letter-spacin
 .chapter-card-body .eyebrow span:last-child { color: #c6c8b7; letter-spacing: .055em; display: flex; align-items: center; gap: 4px; }
 .chapter-card-body h3 { margin: 6px 0 5px; color: var(--ivory); font: 700 clamp(16px,3.1vw,25px)/1.13 var(--display); }
 .chapter-card-body small { display: flex; align-items: center; gap: 4px; color: #b5c0bd; font-size: 10px; }
-.chapter-card-body p, .chronicle-opening p { margin: 7px 0 0; color: #ddcfb6; font: 400 18px/1.2 var(--serif); }
+.chapter-card-body p { margin: 7px 0 0; color: #ddcfb6; font: 400 18px/1.2 var(--serif); }
 .chronicle-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 7px; margin-top: 13px; }
-.chronicle-opening-art { height: clamp(100px,26vh,218px); display: grid; place-items: end center; padding-bottom: 10px; margin-bottom: 11px; background-size: cover; background-position: center 50%; image-rendering: pixelated; box-shadow: inset 0 -30px 38px #111d29c5; color: var(--gold-hi); }
-.chronicle-opening { text-align: center; }
-.chronicle-opening h3 { color: var(--ivory); font: 700 clamp(21px,3vw,34px)/1.25 var(--display); margin: 7px 0 8px; }
-.chronicle-opening .ornament { width: min(280px,66%); margin: auto; }
-.chronicle-opening p { max-width: 52ch; margin: 9px auto 15px; font-size: 21px; }
 
 .story-shade { background: linear-gradient(0deg,#081019e8 0%,#08101958 28%,transparent 67%); }
 .story-shade--scene { place-items: end center; isolation: isolate; background: #080c16ba; }
@@ -566,7 +561,6 @@ kbd { font-family: var(--body); font-size: 10px; font-weight: 700; letter-spacin
   .story-content .story-line { min-height: 0; font-size: 18px; margin: 5px 0 8px; }
 }
 .chapter-resume { margin-top: 10px; min-height: 34px; font-size: 10px; padding-inline: 8px; }
-.recap-line { max-width: min(780px,100% - 12px); margin: -9px auto 14px; padding: 8px 12px; border: 1px solid var(--line); background: #14222bdb; text-align: center; color: #ddc9aa; font: 400 17px/1.22 var(--serif); }
 /* During a boss fight the compass already carries the location. Keep the arena clear. */
 .game-screen:has(.boss-hud) .area-label { opacity: 0; animation: none; }
 @media (min-width: 761px) {

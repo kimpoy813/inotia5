@@ -10,11 +10,11 @@ import { DIRECTIONS, HUMAN_H, HUMAN_W, humanAtlas } from './peopleArt'
 import { FOOT_PAD, SPRITE_FRAMES } from './pixelInk'
 import { enemyAtlas, featureTexture, groundTexture, propTexture } from './pixels'
 import { isBoss } from './patterns'
+import { SCENERY_URLS, sceneryProp } from './sceneryArt'
 import type { Character, Point } from './types'
 
 const heightOver=(a:Actor)=>isBoss(a.foe)?85:a.foe==='archiveHusk'?61:a.foe==='guardian'?53:a.foe==='skeleton'?48:a.foe==='bailiff'?46:a.foe?['slime','spider','wolf','siltmaw'].includes(a.foe)?25:36:43
 const fliers=new Set(['wisp','bat','bellwing','omen'])
-const sceneryArt={wardhall:'/art/tiles/wardhall.png',oak:'/art/tiles/canopy-oak.png',cottage:'/art/tiles/lumen-cottage.png'}
 const color=(s:string)=>parseInt(s.slice(1),16)
 const markGold=0xf4cf83
 const uv=(i:number)=>i%1
@@ -38,9 +38,9 @@ export class WorldScene extends Phaser.Scene {
   private frameTime=0
   private victoryUntil=0
   constructor(private sim:Game){super({key:'World'})}
-  preload(){for(const [key,url] of Object.entries(sceneryArt))this.load.image(`scenery-${key}`,url)}
+  preload(){for(const [key,url] of Object.entries(SCENERY_URLS))this.load.image(`scenery-${key}`,url)}
   create(){
-    for(const key of Object.keys(sceneryArt))if(this.textures.exists(`scenery-${key}`))this.textures.get(`scenery-${key}`).setFilter(Phaser.Textures.FilterMode.NEAREST)
+    for(const key of Object.keys(SCENERY_URLS))if(this.textures.exists(`scenery-${key}`))this.textures.get(`scenery-${key}`).setFilter(Phaser.Textures.FilterMode.NEAREST)
     this.input.on('pointerdown',(p:Phaser.Input.Pointer)=>{if(p.button===0){audio.unlock();const v=p.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;this.sim.click(v)}})
     this.events.once(Phaser.Scenes.Events.SHUTDOWN,()=>{this.input.removeAllListeners();this.tweens.killAll()})
     this.makeGlow()
@@ -85,23 +85,23 @@ export class WorldScene extends Phaser.Scene {
     const map=this.sim.map
     const camera=this.cameras.main;camera.setBackgroundColor(map.id==='spire'||map.id==='bellvault'?0x131521:map.id==='capital'||map.id==='archive'?0x101e2a:0x233533)
     camera.setBounds(0,0,map.w*TILE,map.h*TILE)
+    const terrainSheet=this.textures.exists('scenery-terrain')?this.textures.get('scenery-terrain').getSourceImage() as HTMLImageElement:undefined
     for(let y=0;y<map.h;y+=16)for(let x=0;x<map.w;x+=16){
       const key=`ground-${map.id}-${x}-${y}`,w=Math.min(16,map.w-x),h=Math.min(16,map.h-y)
-      if(!this.textures.exists(key))this.store(key,groundTexture(map,x,y,w,h))
+      if(!this.textures.exists(key))this.store(key,groundTexture(map,x,y,w,h,terrainSheet))
       this.environment.push(this.add.image(x*TILE,y*TILE,key).setOrigin(0).setDepth(-2100))
     }
     for(const [i,p] of map.props.entries()){
-      const painted=p.kind==='house'&&map.id==='village'&&p.variant!==1?'cottage':p.kind==='wardhall'||p.kind==='oak'&&map.id!=='pass'?p.kind:null
-      const imported=painted&&this.textures.exists(`scenery-${painted}`),key=imported?`scenery-${painted}`:`prop-${map.id}-${p.kind}-${p.variant}`
+      const painted=sceneryProp(p.kind,p.variant,map.id,i)
+      const imported=painted&&this.textures.exists(`scenery-${painted.id}`)?painted:undefined
+      const key=imported?`scenery-${imported.id}`:`prop-${map.id}-${p.kind}-${p.variant}`
       if(!this.textures.exists(key))this.store(key,propTexture(p.kind,p.variant,map.id))
-      if(imported&&painted==='cottage')this.environment.push(this.add.ellipse(p.x,p.y-2,112,21,0x18141d,.45).setDepth(-1955))
-      if(imported&&p.kind==='oak')this.environment.push(this.add.ellipse(p.x+2,p.y+1,47,9,0x101c20,.51).setDepth(-1955))
+      if(imported?.id==='cottage')this.environment.push(this.add.ellipse(p.x,p.y-2,112,21,0x18141d,.45).setDepth(-1955))
+      if(imported&&(p.kind==='oak'||imported.id==='hollowOak'))this.environment.push(this.add.ellipse(p.x+1,p.y+1,imported.width*.74,10,0x15201e,.48).setDepth(-1955))
       const pic=this.add.image(p.x,p.y+(imported?2:7),key).setOrigin(.5,1).setDepth(p.y)
       if(imported){
-        const width=painted==='cottage'?110:p.kind==='wardhall'?119:64+p.variant*4
-        pic.setDisplaySize(width,painted==='cottage'?72:width*pic.frame.height/pic.frame.width)
-        if(painted==='cottage'&&p.variant===2)pic.setTint(0xd7cfe9)
-        if(p.kind==='oak')pic.setTint(map.id==='forest'?0x9fc5a3:map.id==='capital'?0xadbbc0:0xd2d8a4)
+        pic.setDisplaySize(imported.width,imported.height??imported.width*pic.frame.height/pic.frame.width)
+        if(imported.shade)pic.setTint(imported.shade)
       }
       this.environment.push(pic);this.props.set(String(i),pic)
       if(p.kind==='lamp')this.light(p.x+6,p.y-19,0xffb268,1.24,.45)

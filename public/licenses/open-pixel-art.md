@@ -1,0 +1,11 @@
+# Free pixel art used in Eclipse of the Veil
+
+The selected and adapted images below are bundled locally, including for offline play. The source collections are released under [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/). Credit is voluntary and given here and in the game's Credits menu. These credits apply to the listed art, not the game's code or its original and previously generated artwork.
+
+| Work / creator | Original source | Bundled adaptations |
+| --- | --- | --- |
+| **Mountain at Dusk Background** — Luis Zuno (Ansimuz) | [OpenGameArt release and license](https://opengameart.org/content/mountain-at-dusk-background); layers retrieved from the credited [ARX NOCTIS mirror](https://github.com/mortedamos/shadowkeep/tree/main/assets/env) (`dusk_sky`, `dusk_far`, `dusk_mountains`, `dusk_trees`, `dusk_fore`) | `art/opening/lumen-ridge.webp` and `art/opening/ashen-overlook.webp`: composed, cropped and color-graded layers, with original settlement, watchpost, path, and lighting accents. |
+| **Ninja Adventure Asset Pack** — Pixel-Boy and AAA | [Creator's release and license](https://pixel-boy.itch.io/ninja-adventure-asset-pack); [creator's GitHub tile sheets](https://github.com/pixel-boy/NinjaAdventure/tree/main/content/map) (`tileset_floor`, `tileset_interior_floor`, `tileset_village_abandoned`) | `art/commons/terrain.png` rows 0–5 and 9–10: selected and recolored 16px grass, snow, clay, and paved tiles. `art/commons/{crown-oak,hollow-oak,fern}.png`: selected and recolored foliage. `art/opening/watchbook.webp`: original book illustration on a recolored wood swatch from the indoor tiles. |
+| **16x16 DungeonTileset II v1.7** — 0x72 (Robert Norenberg) | [Creator's release and license](https://0x72.itch.io/dungeontileset-ii); `atlas_floor-16x16.png` from a [public game mirror](https://github.com/ImmaUnderWaterMan/godot-proj/tree/main/0x72_DungeonTilesetII_v1.7) | `art/commons/terrain.png` rows 6–8: selected floor/crack tiles, recolored for the Spire, Archive, and Vault. |
+
+Paths in the third column are relative to `public/` in the repository. Only the selected art shipped by the game is bundled; the full packs are available from the creators.
