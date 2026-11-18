@@ -28,6 +28,14 @@ const definitions: Item[] = [
   { id:'essence', name:'Veil Dust', detail:'Fine grains caught in the wake of corrupted creatures.', type:'Materials', rarity:'Uncommon', icon:'gem', value:8 },
   { id:'dispatch', name:'Tarek’s Dispatch', detail:'The wax has an impression of an eye drawn inside a door.', type:'Quest', rarity:'Uncommon', icon:'scroll', value:0 },
   { id:'shard', name:'The Oath Shard', detail:'It does not reflect your face. It remembers it.', type:'Quest', rarity:'Epic', icon:'gem', value:0 },
+  { id:'bell-key', name:'Last Bell Clapper', detail:'There is a name cut into the handle. Caldus, in two different hands.', type:'Quest', rarity:'Rare', icon:'bell', value:0 },
+  { id:'archive-bronze', name:'Resonant Bronze', detail:'Tap it and you can hear a chime under the sound of water.', type:'Materials', rarity:'Uncommon', icon:'stone', value:12 },
+  { id:'rainmantle', name:'Rainkeeper Mantle', detail:'A lead-blue coat issued to the archives’ night watch.', type:'Gear', slot:'Chest', rarity:'Epic', icon:'mail', armor:15, value:164, bonus:{ VIT:4, DEX:2 }, level:5 },
+  { id:'bellarm', name:'Oath of the Bell', detail:'A weapon tempered in the silence that follows a broken oath.', type:'Gear', slot:'Weapon', rarity:'Legendary', icon:'sword', attack:35, value:360, bonus:{ STR:4, INT:4, SPI:2 }, level:7 },
+  { id:'letters-ring', name:'Ring of the Unlisted', detail:'Mira had a jeweller copy the scratches on her doorframe.', type:'Gear', slot:'Ring II', rarity:'Rare', icon:'ring', value:109, bonus:{ VIT:3, DEX:4 }, level:5 },
+  { id:'oathweave', name:'Ribbonbound Gloves', detail:'Held together with prayer ribbon and common honesty.', type:'Gear', slot:'Gloves', rarity:'Epic', icon:'hand', value:131, armor:5, bonus:{ SPI:4, INT:3 }, level:5 },
+  { id:'dawnseal', name:'Seal of Returned Names', detail:'A pin struck from a shard of the empty bell. The names are now on the outside.', type:'Gear', slot:'Accessory', rarity:'Legendary', icon:'sun', value:320, armor:6, bonus:{ VIT:6, STR:3 }, level:7 },
+  { id:'cipherheart', name:'Quiet Lantern Charm', detail:'A glimpse of light, folded out of a sheet of black paper.', type:'Gear', slot:'Accessory', rarity:'Legendary', icon:'ghost', value:320, armor:1, bonus:{ DEX:6, SPI:5, INT:2 }, level:7 },
 ]
 export const ITEMS: Record<string, Item> = Object.fromEntries(definitions.map(i => [i.id, i]))
 export const RARITY: Record<Rarity,string> = { Common:'#d3d6cf', Uncommon:'#a5dd9e', Rare:'#8bc5ee', Epic:'#c8a6ef', Legendary:'#efbe74', Mythic:'#f58da8' }
@@ -38,4 +46,5 @@ export const RECIPES = [
   { id:'weapon', name:'Temper a Veil-Touched Armament', result:'edge', count:1, gold:38, needs:{ ore:3, essence:2 } },
   { id:'armor', name:'Forge Guard’s Brigandine', result:'brigandine', count:1, gold:32, needs:{ ore:3 } },
   { id:'clasp', name:'Inlay a Runeclasp Focus', result:'focus', count:1, gold:19, needs:{ ore:1, essence:2 } },
+  { id:'raincoat', name:'Weave a Rainkeeper Mantle', result:'rainmantle', count:1, gold:85, needs:{ 'archive-bronze':3, essence:2 } }
 ] as const

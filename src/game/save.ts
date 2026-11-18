@@ -1,10 +1,10 @@
-import { ROLES, SKILLS } from '../data/classes'
+import { COMPANIONS, ROLES, SKILLS } from '../data/classes'
 import { ITEMS } from '../data/items'
 import { MAPS } from '../data/maps'
-import { QUESTS } from '../data/quests'
+import { QUESTS, restoreChapterEntry } from '../data/quests'
 import { CAPACITY, compatible, MAX_STACK } from './inventory'
 import { clamp, createSave, defaultSettings, LEVEL_CAP, statsOf, xpRequired } from './progression'
-import { ATTRIBUTES, CLASSES, EQUIPMENT_SLOTS, type Character, type ClassId, type CompanionId, type DropRecord, type Gear, type RegionId, type Save, type Settings, type Stack, type Mode } from './types'
+import { ATTRIBUTES, CLASSES, COMPANION_IDS, EQUIPMENT_SLOTS, type Character, type ClassId, type CompanionId, type DropRecord, type Gear, type RegionId, type Save, type Settings, type Stack, type Mode } from './types'
 
 const prefix='veilbound-save-'
 const record=(v:unknown): Record<string,unknown>=>v&&typeof v==='object'&&!Array.isArray(v)?v as Record<string,unknown>:{}
@@ -14,7 +14,7 @@ const finite=(v:unknown,min:number,max:number,fallback=min)=>typeof v==='number'
 const int=(v:unknown,min:number,max:number,fallback=min)=>Math.floor(finite(v,min,max,fallback))
 const region=(v:unknown):RegionId=>known(v,MAPS)?v as RegionId:'village'
 const text=(v:unknown,max:number,fallback='')=>typeof v==='string'&&v.trim()?v.trim().slice(0,max):fallback
-const memberIds=['tarek','lyra'] as const
+const memberIds=COMPANION_IDS
 const modes=['Aggressive','Defensive','Support','Manual'] as const
 function select<T extends string>(v:unknown,values:readonly T[],fallback:T):T{return values.includes(v as T)?v as T:fallback}
 export function settingsFrom(v:unknown):Settings {
@@ -55,6 +55,12 @@ export function parseSave(v:unknown):Save|null {
   s.tracked=known(a.tracked,s.quests)?a.tracked:Object.keys(s.quests).find(k=>s.quests[k].state!=='done')??'q1'
   s.flags=Object.fromEntries(Object.entries(record(a.flags)).slice(0,250).filter((e):e is [string,boolean|string]=>e[0].length<=70&&(typeof e[1]==='boolean'||(typeof e[1]==='string'&&e[1].length<=100))))
   if(s.quests.q9?.state==='done')s.flags.gate=true
+  if(s.flags.decision!=='hidden'&&s.flags.decision!=='warned')delete s.flags.decision
+  if(s.flags['bell-fate']!=='names'&&s.flags['bell-fate']!=='sheltered')delete s.flags['bell-fate']
+  if(s.quests.q13?.progress[0]&&s.quests.q13.progress[1])s.flags['water-gates']=true
+  if(s.quests.q13?.progress[2])s.flags['husk-cleared']=true
+  if(s.quests.q15?.progress[1])s.flags['hollow-cleared']=true
+  restoreChapterEntry(s)
   if(s.quests.q10?.progress[0])s.flags['boss-cleared']=true
   for(const [id,val] of Object.entries(record(a.drops)))if(own(MAPS,id)&&Array.isArray(val)){
     const r=id as RegionId, m=MAPS[r], result:DropRecord[]=[]
@@ -63,8 +69,8 @@ export function parseSave(v:unknown):Save|null {
   }
   const roster=record(a.companions)
   for(const id of memberIds)if(own(roster,id)){
-    const c=record(roster[id]), cls:ClassId=id==='tarek'?'warrior':'priest'
-    s.companions[id]={...actorFrom(c,cls,{Weapon:{id:ROLES[cls].weapon,qty:1,plus:0}}),id,mode:select<Mode>(c.mode,modes,id==='tarek'?'Defensive':'Support'),level:int(c.level,1,s.level,s.level)}
+    const c=record(roster[id]), member=COMPANIONS[id], cls=member.classId
+    s.companions[id]={...actorFrom(c,cls,{Weapon:{id:ROLES[cls].weapon,qty:1,plus:0}}),id,mode:select<Mode>(c.mode,modes,member.mode),level:int(c.level,1,s.level,s.level)}
   }
   s.active=[...new Set((Array.isArray(a.active)?a.active:[]).filter((id):id is CompanionId=>memberIds.includes(id)&&!!s.companions[id as CompanionId]))].slice(0,2)
   s.controlled=s.active.includes(a.controlled as CompanionId)?a.controlled as CompanionId:'hero'

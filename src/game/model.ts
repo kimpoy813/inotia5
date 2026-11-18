@@ -1,20 +1,22 @@
 import { COMPANIONS, ROLES } from '../data/classes'
+import { BELL_REVELATION, BELL_VISION, ECHO_BY_ID, personaId, personFor, type StoryLine } from '../data/chronicle'
 import { ENEMIES, type EnemyDef, type EnemyId } from '../data/enemies'
 import { ITEMS } from '../data/items'
 import { MAPS, VILLAGE_START, type Feature, type Spawn } from '../data/maps'
-import { NPC_TEXT, QUEST_LIST, QUESTS } from '../data/quests'
+import { NPC_TEXT, QUEST_LIST, QUESTS, restoreChapterEntry } from '../data/quests'
 import { add, countItem, craft, enhance, equip, remove, trade, unequip } from './inventory'
-import { distance, pathfind, safePoint, sight, slide, vector } from './navigation'
-import { clamp, damage, gainXp, statsOf } from './progression'
+import { distance, open, pathfind, safePoint, sight, slide, vector } from './navigation'
+import { BOSS_RULES, angularDistance, casts, closestInLane, inTelegraph, isBoss, rayAngles, retreatFrom, withinArena, type Telegraph } from './patterns'
+import { clamp, damage, gainXp, makeCompanion, statsOf } from './progression'
 import type { Attribute, Character, CompanionId, DropRecord, Facing, Mode, Point, Quest, QuestEvent, RegionId, Save, Settings, Skill, Slot, StatusId, StatusSpec } from './types'
 
 export type Panel = 'inventory'|'character'|'skills'|'party'|'journal'|'map'|'shop'|'forge'|'settings'|'pause'|'help'|'over'
 export type ActorKey = 'hero'|CompanionId
 export type Focus = { label: string; action: string; x: number; y: number; key: string; feature?: Feature; drop?: DropRecord }
 export type Choice = { label: string; run: () => void }
-export type Conversation = { speaker: string; portrait: string; caption: string; lines: string[]; index: number; choices: Choice[] }
+export type Conversation = { speaker: string; portrait: string; origin: string; caption: string; lines: StoryLine[]; index: number; choices: Choice[]; art?: string }
 type Effect = { end:number; strength:number; tick:number; source?:Actor }
-export type Warning = { pattern:'strike'|'spikes'|'barrage'|'summon'|'pounce'|'bolt'; x:number; y:number; r:number; start:number; end:number; angle:number; target:Actor }
+export type Warning = Telegraph & { start:number; end:number; target:Actor }
 export type State = 'idle'|'patrol'|'chase'|'windup'|'recovery'|'return'|'dead'|'stunned'
 export type Actor = Point & {
   key:string; character?:Character; foe?:EnemyId; spawn:Point; hp:number; facing:Facing; aim:Point; moving:boolean; state:State;
@@ -26,7 +28,7 @@ export type Projectile = Point & { key:number; owner:Actor; skill?:Skill; dir:Po
 export type Trap = Point & { key:number; owner:Actor; skill:Skill; rank:number; expiry:number; ready:number }
 export type Visual = Point & { kind:'slash'|'burst'|'cast'|'hit'|'heal'|'text'|'death'|'loot'|'level'|'step'|'impact'; color:string; size?:number; angle?:number; text?:string; sound?:string; heavy?:boolean; variation?:number }
 export type Toast = { id:number; text:string; kind:'info'|'good'|'bad'; until:number }
-const NAMES:Record<string,string>={tarek:'Captain Tarek',lyra:'Lyra',seris:'Seris',guard:'Wounded Sentinel',corin:'Corin',mara:'Mara',ellan:'Ellan',bess:'Bess',ruin:'The Oath Gate','oath-door':'The Spire','inscription':'Weathered Inscription',veilstone:'Fractured Waystone'}
+const NAMES:Record<string,string>={tarek:'Captain Tarek',lyra:'Lyra',seris:'Seris',guard:'Wounded Sentinel',corin:'Corin',mara:'Mara',ellan:'Ellan',bess:'Bess',ruin:'The Oath Gate','oath-door':'The Spire','inscription':'Weathered Inscription',veilstone:'Fractured Waystone',mira:'Mira',gatekeeper:'Crown Gatekeeper',ren:'Provisioner Ren','forge-city':'Smith Kera','census-stone':'The Census of the Living','sealing-press':'The Sealing Press','bell-altar':'The Altar of the Last Bell'}
 const CAPTIONS:Record<string,string>={tarek:'The Fallen Commander',lyra:'The Wandering Healer',seris:'The Lost Guardian',mara:'Lumenford Blacksmith',corin:'Lumenford Merchant',guard:'The Lost Patrol',bess:'Keeper of the Lanterns',ellan:'Lumenford Villager'}
 const RUNES=['ember','tide','thorn']
 const HARMFUL:StatusId[]=['poison','burn','bleed','stun','slow','silence','sunder','root']
@@ -52,7 +54,7 @@ export class Game {
   hidden=false
   bossSeen=false
   runeIndex=0
-  chapterSignal=false
+  chapterSignal:1|2|false=false
   enteredAt=0
   onPersist:(s:Save)=>Promise<boolean>
   private callbacks=new Set<()=>void>()
@@ -67,6 +69,7 @@ export class Game {
   private keyboard={x:0,y:0}
   constructor(public save:Save,onSave:(s:Save)=>Promise<boolean>=async()=>true, private random:()=>number=Math.random) {
     this.onPersist=onSave
+    restoreChapterEntry(save)
     this.loadMap(save.region,{x:save.x,y:save.y},true)
     if(!this.activeActor.character!.hp) {
       const living=this.party.find(a=>this.health(a)>0);if(living)this.save.controlled=living.key as ActorKey;else this.panel='over'
@@ -76,12 +79,13 @@ export class Game {
   snapshot=()=>this.revision
   refresh(){this.revision++;for(const cb of this.callbacks)cb()}
   get map(){return MAPS[this.save.region]}
-  get gate(){return this.save.flags.gate===true}
+  get gate(){return this.map.id==='archive'?this.save.flags['water-gates']===true:this.save.flags.gate===true}
+  get entry(){return this.save.flags.decision==='warned'?'warned':'hidden'}
   get activeActor(){return this.party.find(a=>a.key===this.save.controlled)??this.party[0]}
   get actor(){return this.activeActor.character!}
   get target(){return this.enemies.find(a=>a.key===this.selected&&this.health(a)>0)}
   get drops(){return this.save.drops[this.save.region]??=[]}
-  get boss(){return this.enemies.find(a=>a.foe==='warden'&&this.health(a)>0)}
+  get boss(){return this.enemies.find(a=>isBoss(a.foe)&&this.health(a)>0)}
   get main(){return QUEST_LIST.find(q=>q.category==='Main'&&this.save.quests[q.id]?.state!=='done'&&this.save.quests[q.id])}
   get tracked(){const q=QUESTS[this.save.tracked];return q&&this.save.quests[q.id]?.state!=='done'?q:this.main}
   get blocked(){return this.hidden||!!this.panel||!!this.dialog}
@@ -107,9 +111,13 @@ export class Game {
     const p=safePoint(this.map,point,this.gate);this.save.x=p.x;this.save.y=p.y
     this.harvested.clear();this.enemies=[];this.projectiles=[];this.traps=[];this.visuals=[];this.pendingHits=[];this.runeIndex=0;this.bossSeen=false;this.clearOrder();this.selected=null
     this.syncParty(true,p)
-    for(const spawn of this.map.spawns)if(spawn.id!=='omen'&&(spawn.id!=='warden'||!this.save.flags['boss-cleared']))this.spawn(spawn)
-    if(this.save.flags['boss-cleared']&&!this.save.quests.q10?.progress[1]&&region==='spire'&&!this.drops.some(d=>d.stack?.id==='shard')&&!countItem(this.save.bag,'shard')){
-      const start=this.map.spawns.find(s=>s.id==='warden')!;this.loot('shard',1,start)
+    for(const spawn of this.map.spawns) {
+      const id=spawn.id
+      if(id==='omen'||(spawn.entry&&spawn.entry!==this.entry))continue
+      if(isBoss(id)&&this.save.flags[BOSS_RULES[id].cleared]) {
+        const item=BOSS_RULES[id].prize, q=id==='warden'?this.save.quests.q10:this.save.quests.q15, i=id==='warden'?1:2
+        if(q?.state!=='done'&&!q?.progress[i]&&!this.drops.some(d=>d.stack?.id===item)&&!countItem(this.save.bag,item))this.loot(item,1,spawn)
+      }else if(id!=='archiveHusk'||!this.save.flags['husk-cleared'])this.spawn(spawn)
     }
     this.epoch++;this.enteredAt=this.time;this.mark('visit',region,1)
     if(!initial&&region!==prior)void this.persist()
@@ -133,7 +141,7 @@ export class Game {
     if (!v.x&&!v.y || a.effects.root || a.effects.stun) {a.moving=false;return}
     if(face)this.face(a,v)
     const ox=a.x,oy=a.y, slow=1-(a.effects.slow?.strength??0)
-    slide(this.map,a,v.x*speed*dt*slow,v.y*speed*dt*slow,this.gate,a.foe==='warden'?7:5)
+    slide(this.map,a,v.x*speed*dt*slow,v.y*speed*dt*slow,this.gate,isBoss(a.foe)?7:5)
     a.moving=Math.hypot(a.x-ox,a.y-oy)>.08
   }
   private followPath(a:Actor,route:Point[],speed:number,dt:number){
@@ -170,7 +178,7 @@ export class Game {
   selectEnemy(t:Actor){if(this.blocked||this.health(t)<=0)return;this.clearOrder();this.auto=true;this.selected=t.key;this.refresh()}
   click(p:Point){
     if(this.blocked)return
-    const e=this.enemies.filter(a=>this.health(a)>0&&Math.abs(a.x-p.x)<(a.foe==='warden'?23:11)&&p.y>=a.y-(a.foe==='warden'?45:33)&&p.y<=a.y+8).sort((a,b)=>b.y-a.y)[0]
+    const e=this.enemies.filter(a=>this.health(a)>0&&Math.abs(a.x-p.x)<(isBoss(a.foe)?25:a.foe==='archiveHusk'?19:12)&&p.y>=a.y-(isBoss(a.foe)?69:a.foe==='archiveHusk'?50:34)&&p.y<=a.y+8).sort((a,b)=>b.y-a.y)[0]
     if(e){this.selectEnemy(e);return}
     const f=this.focuses().filter(f=>Math.abs(f.x-p.x)<(f.feature?.kind==='npc'?16:15)&&p.y>=f.y-(f.feature?.kind==='npc'?50:27)&&p.y<=f.y+8).sort((a,b)=>distance(a,p)-distance(b,p))[0]
     this.clearOrder()
@@ -256,7 +264,7 @@ export class Game {
       this.strike(a,b,s.power*multiplier*(flank?1.75:1),!!s.magic)
       if(!i&&this.health(b)>0) {
         if(s.status)this.apply(b,s.status,a,rank)
-        if((s.knock||s.pull)&&b.foe!=='warden'){const v=vector(b.x-a.x,b.y-a.y),push=s.pull?-Math.min(32,Math.max(0,distance(a,b)-12)):s.knock!; slide(this.map,b,v.x*push,v.y*push,this.gate)}
+        if((s.knock||s.pull)&&!isBoss(b.foe)){const v=vector(b.x-a.x,b.y-a.y),push=s.pull?-Math.min(32,Math.max(0,distance(a,b)-12)):s.knock!; slide(this.map,b,v.x*push,v.y*push,this.gate)}
       }
     }
     applyHit(0);for(let i=1;i<(s.hits??1);i++)this.pendingHits.push({time:this.time+i*114,run:()=>applyHit(i)})
@@ -268,18 +276,18 @@ export class Game {
     if(r.range>40){this.fire(a,b,1,r.color);this.render({x:a.x,y:a.y,kind:'cast',color:r.color,size:13,sound:r.magic?'spell':'arrow'})}
     else {this.render({x:a.x,y:a.y,kind:'slash',color:'#ecdcaa',size:r.range+3,angle:Math.atan2(a.aim.y,a.aim.x),sound:'slash'});this.strike(a,b,1,false,true)}
   }
-  private fire(a:Actor,b:Point,power:number,color:string,s?:Skill,rank=1,angle?:number,ailment?:StatusSpec) {
+  private fire(a:Actor,b:Point,power:number,color:string,s?:Skill,rank=1,angle?:number,ailment?:StatusSpec,extent?:number) {
     const dir=angle===undefined?vector(b.x-a.x,b.y-a.y):{x:Math.cos(angle),y:Math.sin(angle)}
-    const speed=a.foe?(a.foe==='warden'?91:105):s?.id==='warlock-4'?144:240
-    this.projectiles.push({key:++this.seed,owner:a,x:a.x+dir.x*7,y:a.y+dir.y*7,dir,time:this.time+((s?.range??(a.foe==='warden'?255:a.character?ROLES[a.character.classId].range+18:145)) /speed)*1000,speed,power,color,skill:s,rank,hits:new Set(),ailment})
+    const speed=a.foe?(isBoss(a.foe)?91:105):s?.id==='warlock-4'?144:240
+    this.projectiles.push({key:++this.seed,owner:a,x:a.x+dir.x*7,y:a.y+dir.y*7,dir,time:this.time+((extent??s?.range??(isBoss(a.foe)?255:a.character?ROLES[a.character.classId].range+18:145)) /speed)*1000,speed,power,color,skill:s,rank,hits:new Set(),ailment})
   }
   private updateProjectiles(dt:number) {
     this.projectiles=this.projectiles.filter(p=>{
       const a=p.owner,next={x:p.x+p.dir.x*p.speed*dt,y:p.y+p.dir.y*p.speed*dt}
-      if(this.time>=p.time||a.foe==='warden'&&this.save.flags['boss-cleared']||!sight(this.map,p,next,this.gate))return false
+      if(this.time>=p.time||a.foe&&!this.health(a)||!sight(this.map,p,next,this.gate))return false
       p.x=next.x;p.y=next.y
       const targets=a.foe?this.party:this.enemies
-      for(const b of targets) if(this.health(b)>0&&!p.hits.has(b.key)&&distance(p,b)<(b.foe==='warden'?17:10)) {
+      for(const b of targets) if(this.health(b)>0&&!p.hits.has(b.key)&&distance(p,b)<(isBoss(b.foe)?17:10)) {
         p.hits.add(b.key)
         if(a.foe){if(this.injury(b,ENEMIES[a.foe].attack*p.power,true)&&p.ailment)this.apply(b,p.ailment,a);return false}
         if(p.skill){if(p.skill.radius)this.burst(a,b,p.skill,p.rank);else this.skillHit(a,b,p.skill,p.rank,p.skill.range+25)}
@@ -295,10 +303,10 @@ export class Game {
     })
   }
   private apply(a:Actor,s:StatusSpec,source?:Actor,rank=1){
-    const p=a.effects[s.id],cc=['stun','root','silence'].includes(s.id), factor=a.foe==='warden'&&cc ? .4 : 1
+    const p=a.effects[s.id],cc=['stun','root','silence'].includes(s.id), factor=isBoss(a.foe)&&cc ? .4 : 1
     let strength=s.strength??1;if(['poison','burn','bleed','shield','regen'].includes(s.id))strength*=1+(rank-1)*.24
     a.effects[s.id]={end:Math.max(p?.end??0,this.time+s.time*1000*factor),strength:Math.max(p?.strength??0,strength),tick:p?.tick??this.time+1000,source}
-    if(s.id==='stun'&&a.foe!=='warden'){a.warning=undefined;a.recovery=this.time+300}
+    if(s.id==='stun'&&!isBoss(a.foe)){a.warning=undefined;a.recovery=this.time+300}
   }
   private tickEffects(a:Actor) {
     for(const [key,ef] of Object.entries(a.effects) as [StatusId,Effect][]){
@@ -315,7 +323,9 @@ export class Game {
     if(basic&&this.random()>d.accuracy){this.render({x:b.x,y:b.y,kind:'text',color:'#c6c5b8',text:'MISS'});return 0}
     const attack=(magic?d.magical:d.physical)*(1+(a.effects.might?.strength??0))*(b.vulnerable>this.time?1.32:1)
     const defense=(magic?e.resist:e.armor)*(1-(b.effects.sunder?.strength??0))
-    return this.deal(b,damage(attack,power,defense,{variance:.92+this.random()*.16,crit,critPower:d.critPower,resistance:magic?e.resist*.004:0}),crit?'#ffe098':'#fff2d7',crit,a)
+    const braced=b.foe==='bailiff'&&b.warning?.pattern==='sweep'&&angularDistance(b.warning.angle,Math.atan2(a.y-b.y,a.x-b.x))<1.17
+    if(braced)this.render({x:b.x,y:b.y,kind:'text',color:'#f2bf83',text:'GUARD'})
+    return this.deal(b,damage(attack,power*(braced?(magic ? .65 : .36):1),defense,{variance:.92+this.random()*.16,crit,critPower:d.critPower,resistance:magic?e.resist*.004:0}),crit?'#ffe098':'#fff2d7',crit,a)
   }
   private injury(a:Actor,attack:number,magic=false) {
     if(!a.character||a.inv>this.time||this.health(a)<=0)return 0
@@ -331,12 +341,12 @@ export class Game {
     n=Math.round(n)
     if(!n){this.render({x:a.x,y:a.y,kind:'text',color:'#a4dace',text:'BLOCK'});return 0}
     if(a.character)a.character.hp=Math.max(0,a.character.hp-n);else a.hp=Math.max(0,a.hp-n)
-    if(source&&a.foe){a.threat=source; if(a.foe==='warden'&&!this.bossSeen)this.bossIntro(a)}
+    if(source&&a.foe){a.threat=source;this.discover(a);if(isBoss(a.foe)&&!this.bossSeen)this.bossIntro(a)}
     if(!dot)a.hurt=this.time+125
     this.render({x:a.x,y:a.y,kind:'text',color,text:crit?`${n}!`:String(n),heavy:crit})
     if(!dot)this.render({x:a.x,y:a.y,kind:'hit',color,size:crit?19:12,sound:crit?'critical':'hit',heavy:crit})
     if(this.health(a)<=0)this.kill(a)
-    else if(a.foe==='warden')this.checkPhase(a)
+    else if(isBoss(a.foe))this.checkPhase(a,a.foe)
     return n
   }
   private heal(a:Actor,n:number) {
@@ -349,7 +359,7 @@ export class Game {
   }
   private kill(a:Actor) {
     a.state='dead';a.deadAt=this.time;a.warning=undefined;a.moving=false;a.effects={};a.roll=undefined
-    this.render({x:a.x,y:a.y,kind:'death',color:a.foe?ENEMIES[a.foe].color:'#dbaa93',size:a.foe==='warden'?57:24,sound:a.foe==='warden'?'victory':a.foe?undefined:'defeat',heavy:a.foe==='warden'})
+    this.render({x:a.x,y:a.y,kind:'death',color:a.foe?ENEMIES[a.foe].color:'#dbaa93',size:isBoss(a.foe)?57:24,sound:isBoss(a.foe)?'victory':a.foe?undefined:'defeat',heavy:isBoss(a.foe)})
     if(a.foe){
       if(this.selected===a.key){this.selected=null;this.auto=false}
       const def:EnemyDef=ENEMIES[a.foe]
@@ -357,82 +367,108 @@ export class Game {
         this.mark('kill',a.foe,1);this.xp(def.xp);if(def.gold)this.loot(null,def.gold,a)
         for(const [id,chance] of def.loot)if(this.random()<=chance)this.loot(id,1,a)
       }
-      if(a.foe==='warden') { this.save.flags['boss-cleared']=true;this.projectiles=this.projectiles.filter(p=>!p.owner.foe);for(const summon of this.enemies)if(summon.summoned&&summon.hp>0){summon.hp=0;summon.deadAt=this.time;summon.state='dead';summon.warning=undefined}this.toast('Warden felled · Recover the Oath Shard','good');void this.persist() }
+      if(a.foe==='archiveHusk'){this.save.flags['husk-cleared']=true;void this.persist()}
+      if(isBoss(a.foe)) {
+        this.save.flags[BOSS_RULES[a.foe].cleared]=true
+        this.projectiles=this.projectiles.filter(p=>!p.owner.foe)
+        for(const summon of this.enemies)if(summon.summoned&&summon.hp>0){summon.hp=0;summon.deadAt=this.time;summon.state='dead';summon.warning=undefined}
+        this.toast(a.foe==='warden'?'Warden felled · Recover the Oath Shard':'The watch is over · Recover the Last Bell Clapper','good');void this.persist()
+      }
     }else if(a===this.activeActor){
       const next=this.party.find(p=>p!==a&&this.health(p)>0);if(next){this.control(next.key as ActorKey);this.toast(`${a.key==='hero'?this.save.name:COMPANIONS[a.key as CompanionId].name} is down`,'bad')}
       else{this.setPanel('over');void this.persist()}
     }
   }
-  private bossIntro(a:Actor){this.bossSeen=true;this.toast('Gloomroot Warden · Keeper of the Oath','bad');this.render({x:a.x,y:a.y,kind:'cast',color:'#b5d09e',size:40,sound:'boss'})}
-  private checkPhase(a:Actor) {
-    const fraction=a.hp/ENEMIES.warden.hp, next=fraction<=.35?3:fraction<=.70?2:1
+  private discover(a:Actor){if(a.foe&&!a.summoned)this.save.flags[`seen:${a.foe}`]=true}
+  private bossIntro(a:Actor){if(!isBoss(a.foe))return;this.bossSeen=true;this.toast(BOSS_RULES[a.foe].intro,'bad');this.render({x:a.x,y:a.y,kind:'cast',color:ENEMIES[a.foe].color,size:40,sound:a.foe==='hollow'?'bell':'boss'})}
+  private checkPhase(a:Actor,id:keyof typeof BOSS_RULES) {
+    const rules=BOSS_RULES[id],fraction=a.hp/ENEMIES[id].hp, next=fraction<=rules.thresholds[1]?3:fraction<=rules.thresholds[0]?2:1
     if(next<=a.phase)return
-    a.phase=next;a.pattern=0;a.recovery=this.time+710;a.warning=undefined;delete a.effects.stun
-    this.render({x:a.x,y:a.y,kind:'burst',color:next===2?'#efbd78':'#ef8a9c',size:77,heavy:true,sound:'boss'})
-    this.toast(next===2?'Phase II · Wrath of the Roots':'Phase III · A Crown Unbound','bad')
+    a.phase=next;a.pattern=0;a.state='recovery';a.recovery=this.time+710;a.warning=undefined;delete a.effects.stun
+    this.render({x:a.x,y:a.y,kind:'burst',color:next===2?'#efbd78':'#ef8a9c',size:77,heavy:true,sound:id==='hollow'?'bell':'boss'})
+    this.toast(`Phase ${next===2?'II':'III'} · ${rules.phases[next-2]}`,'bad')
     this.reinforcements(a,next===2?1:2)
   }
   private reinforcements(a:Actor,num:number){
-    const existing=this.enemies.filter(e=>e.summoned&&e.hp>0).length
+    if(!isBoss(a.foe))return
+    const foes=BOSS_RULES[a.foe].call,existing=this.enemies.filter(e=>e.summoned&&e.hp>0).length
     for(let i=0;i<Math.min(num,3-existing);i++){
       const p=safePoint(this.map,{x:a.x+((this.seed+i)%2?1:-1)*(31+8*i),y:a.y+27+13*i},this.gate)
-      if(p.x<39*16)continue
-      const add=this.spawn({id:i===1?'wisp':'wolf',key:`summon-${++this.seed}`,...p},true);add.threat=this.activeActor;add.recovery=this.time+800
-      this.render({...p,kind:'burst',color:'#b4ca92',size:21})
+      if(!withinArena(a.foe,p))continue
+      const add=this.spawn({id:foes[i%foes.length],key:`summon-${++this.seed}`,...p},true);add.threat=this.activeActor;add.recovery=this.time+800
+      this.render({...p,kind:'burst',color:ENEMIES[a.foe].color,size:21})
     }
   }
   private warning(a:Actor,target:Actor,def:EnemyDef) {
-    let pattern:Warning['pattern']=def.style==='boss'?'strike':def.style==='bite'?'strike':def.style
-    if(a.foe==='warden'){
-      const order:Warning['pattern'][]=a.phase===1?['strike','spikes','barrage']:a.phase===2?['spikes','strike','barrage','summon']:['barrage','spikes','strike','spikes','summon']
-      pattern=order[a.pattern++%order.length]
+    let pattern:Warning['pattern']=def.style==='boss'||def.style==='bite'?'strike':def.style
+    const boss=isBoss(a.foe),hollow=a.foe==='hollow'
+    if(isBoss(a.foe)){
+      const order=BOSS_RULES[a.foe].patterns[a.phase-1];pattern=order[a.pattern++%order.length]
+    }else if(a.foe==='archiveHusk'&&a.pattern++%2===1)pattern='ring'
+    if(a.effects.silence&&casts(pattern))pattern=boss&&hollow?'sweep':'strike'
+    const point=pattern==='spikes'||pattern==='pounce'?target:a,v=vector(target.x-a.x,target.y-a.y);this.face(a,v)
+    const r=pattern==='ring'?hollow?a.phase===3?91:80:61:pattern==='charge'?hollow?16:13:pattern==='sweep'?hollow?58:def.range+9:pattern==='spikes'?a.phase===3?43:35:pattern==='pounce'?23:pattern==='strike'?boss?53:def.range+9:pattern==='summon'?33:13
+    const length=boss?(pattern==='spikes'?1120:pattern==='barrage'?960:pattern==='ring'?1480:pattern==='charge'?1160:1030)-(a.phase-1)*105:def.windup
+    const angle=Math.atan2(v.y,v.x)
+    const w:Warning={x:point.x,y:point.y,r,pattern,start:this.time,end:this.time+length,angle,target}
+    if(pattern==='sweep')w.arc=hollow?1.17:1.03
+    if(pattern==='ring')w.inner=hollow?26:21
+    if(pattern==='fan'){w.rays=rayAngles(angle,hollow&&a.phase===3?5:3,hollow ? .30 : .37);w.length=hollow?145:122}
+    if(pattern==='charge'){
+      const extent=hollow?105:74
+      let run=0
+      for(let n=2;n<=extent;n+=2){const p={x:a.x+v.x*n,y:a.y+v.y*n};if(!open(this.map,p.x,p.y,this.gate,boss?7:5)||!withinArena(a.foe,p))break;run=n}
+      w.length=run
     }
-    if(a.effects.silence&&(pattern==='bolt'||pattern==='barrage'||pattern==='spikes'||pattern==='summon'))pattern='strike'
-    const aimed=pattern==='spikes'||pattern==='pounce', point=aimed?target:a;const v=vector(target.x-a.x,target.y-a.y);this.face(a,v)
-    const boss=a.foe==='warden', r=pattern==='spikes'?a.phase===3?43:35:pattern==='pounce'?23:pattern==='strike'?boss?53:def.range+9:pattern==='summon'?33:13
-    const length=boss?(pattern==='spikes'?1120:pattern==='barrage'?960:1030)-(a.phase-1)*105:def.windup
-    a.warning={x:point.x,y:point.y,r,pattern,start:this.time,end:this.time+length,angle:Math.atan2(v.y,v.x),target}
-    a.state='windup';a.moving=false
-    if(boss)this.render({x:a.x,y:a.y,kind:'cast',color:'#fabf82',sound:'omen',variation:a.phase})
+    a.warning=w;a.state='windup';a.moving=false
+    if(boss||pattern==='ring')this.render({x:a.x,y:a.y,kind:'cast',color:'#fabf82',sound:hollow||pattern==='ring'?'bell':'omen',variation:a.phase})
   }
   private execute(a:Actor,w:Warning,def:EnemyDef){
     a.warning=undefined;a.state='recovery';a.moving=false
-    const boss=a.foe==='warden';a.recovery=this.time+(boss?Math.max(720,1450-(a.phase-1)*235):440);a.basicAt=this.time+(boss?1350-(a.phase-1)*180:def.rest)
-    if(boss&&w.pattern!=='summon')a.vulnerable=this.time+(w.pattern==='spikes'?1550:870)
-    a.animation={id:w.pattern==='strike'||w.pattern==='pounce'?'slash':'cast',until:this.time+340}
+    const boss=isBoss(a.foe),hollow=a.foe==='hollow', ring=w.pattern==='ring'
+    a.recovery=this.time+(boss?(hollow?Math.max(980,1690-(a.phase-1)*180):Math.max(720,1450-(a.phase-1)*235)):a.foe==='archiveHusk'?810:440)
+    a.basicAt=this.time+(boss?1350-(a.phase-1)*180:def.rest)
+    if(boss&&w.pattern!=='summon'||a.foe==='archiveHusk'&&ring)a.vulnerable=this.time+(ring||w.pattern==='spikes'?1550:980)
+    a.animation={id:casts(w.pattern)?'cast':'slash',until:this.time+340}
     const factor=boss?1+(a.phase-1)*.13:1
-    if(w.pattern==='barrage'||w.pattern==='bolt'){
-      const count=boss?3+a.phase*2:1,spread=boss?(a.phase===3?.28:.21):0
-      for(let i=0;i<count;i++)this.fire(a,w.target,factor,boss?'#d4a0ed':def.color,undefined,1,w.angle+(i-(count-1)/2)*spread,!boss?def.ailment:undefined)
-      this.render({x:a.x,y:a.y,kind:'cast',color:boss?'#c995ec':def.color,sound:'spell',size:boss?31:12});return
+    if(w.pattern==='barrage'||w.pattern==='bolt'||w.pattern==='fan'){
+      const rays=w.rays??rayAngles(w.angle,boss?3+a.phase*2:1,boss?(a.phase===3?.28:.21):0)
+      for(const angle of rays)this.fire(a,w.target,factor*(w.pattern==='fan'?.88:1),w.pattern==='barrage'?'#d4a0ed':def.color,undefined,1,angle,!boss?def.ailment:undefined,w.pattern==='fan'?w.length:undefined)
+      this.render({x:a.x,y:a.y,kind:'cast',color:def.color,sound:w.pattern==='fan'?'chime':'spell',size:boss?31:12});return
     }
     if(w.pattern==='summon'){this.reinforcements(a,a.phase-1);return}
     if(w.pattern==='pounce'){
       const v=vector(w.x-a.x,w.y-a.y),d=Math.min(39,distance(a,w));slide(this.map,a,v.x*d,v.y*d,this.gate)
     }
-    const center=(w.pattern==='strike'||w.pattern==='pounce')?a:w
+    const center=(w.pattern==='strike'||w.pattern==='pounce')?a:w, lane=w.pattern==='charge', sweep=w.pattern==='sweep'
     for(const b of this.party){
-      if(this.health(b)<=0||!this.ranges(b,center,w.r))continue
+      if(this.health(b)<=0)continue
+      if(lane||sweep||ring){if(!inTelegraph(w,b)||!sight(this.map,lane?closestInLane(w,b):w,b,this.gate))continue}
+      else if(!this.ranges(b,center,w.r))continue
       if(!boss&&w.pattern==='strike'&&((b.x-a.x)*a.aim.x+(b.y-a.y)*a.aim.y)<-8)continue
-      if(this.injury(b,def.attack*factor*(w.pattern==='spikes'?1.23:1),w.pattern==='spikes')&&def.ailment)this.apply(b,def.ailment,a)
+      if(this.injury(b,def.attack*factor*(w.pattern==='spikes'||ring?1.23:1),w.pattern==='spikes'||ring)&&def.ailment)this.apply(b,def.ailment,a)
     }
-    this.render({x:center.x,y:center.y,kind:w.pattern==='strike'?'slash':'impact',color:w.pattern==='spikes'?'#f5a493':boss?'#e2a77a':def.color,size:w.r,angle:w.angle,heavy:boss,sound:boss?'impact':'slash',variation:w.pattern==='spikes'?8:0})
+    if(lane){
+      const ox=a.x,oy=a.y; a.x=w.x+Math.cos(w.angle)*(w.length??0);a.y=w.y+Math.sin(w.angle)*(w.length??0)
+      for(let i=0;i<5;i++)this.render({x:ox+(a.x-ox)*i/5,y:oy+(a.y-oy)*i/5,kind:'cast',color:def.color,size:16})
+    }
+    const impact=lane?a:center
+    this.render({x:impact.x,y:impact.y,kind:w.pattern==='strike'||sweep?'slash':'impact',color:w.pattern==='spikes'?'#f5a493':def.color,size:w.r,angle:w.angle,heavy:boss,sound:ring?'bell':boss?'impact':'slash',variation:w.pattern==='spikes'?8:ring?7:0})
   }
   private enemyAI(a:Actor,dt:number) {
     if(!this.health(a))return
-    const d:EnemyDef=ENEMIES[a.foe!],boss=a.foe==='warden'
+    const d:EnemyDef=ENEMIES[a.foe!],boss=isBoss(a.foe)
     if(a.effects.stun){a.state='stunned';a.moving=false;return}
     if(a.warning){
       a.moving=false
-      if(a.effects.silence&&['bolt','barrage','spikes','summon'].includes(a.warning.pattern)){a.warning=undefined;a.recovery=this.time+450;return}
+      if(a.effects.silence&&casts(a.warning.pattern)){a.warning=undefined;a.recovery=this.time+450;return}
       if(this.time>=a.warning.end)this.execute(a,a.warning,d);return
     }
     if(a.recovery>this.time){a.moving=false;return}
-    const party=this.party.filter(p=>this.health(p)>0&&!p.effects.veil&&(!boss||p.x>39*16))
-    const current=a.threat
+    const party=this.party.filter(p=>this.health(p)>0&&!p.effects.veil&&withinArena(a.foe,p))
+    const current=a.threat,leash=distance(a,a.spawn)
     const seen=party.filter(p=>this.ranges(a,p,d.sight)).sort((b,c)=>distance(a,b)-distance(a,c))[0]
-    const target=current&&party.includes(current)&&distance(a,current)<(boss?350:194)&&distance(a,a.spawn)<(boss?400:175)?current:seen
-    const leash=distance(a,a.spawn)
+    const target=current&&party.includes(current)&&distance(a,current)<(boss?350:194)&&leash<(boss?400:185)?current:seen
     if(!target||!boss&&!a.summoned&&leash>212){
       a.threat=undefined
       if(leash>18){a.state='return';this.approach(a,a.spawn,d.speed*.78,dt)}
@@ -444,9 +480,10 @@ export class Game {
       }
       return
     }
+    if(a.threat!==target)this.discover(a)
     a.threat=target
     if(boss&&!this.bossSeen)this.bossIntro(a)
-    const range=boss?(a.pattern===0&&a.phase===1?d.range:105):d.range
+    const range=boss?(a.pattern===0&&a.phase===1?d.range:a.foe==='hollow'?93:105):d.range
     if(this.ranges(a,target,range)){
       a.moving=false;this.face(a,vector(target.x-a.x,target.y-a.y))
       if(this.time>=a.basicAt)this.warning(a,target,d)
@@ -461,9 +498,9 @@ export class Game {
     const dist=distance(a,main)
     if(dist>225){Object.assign(a,safePoint(this.map,{x:main.x-16-i*8,y:main.y+13},this.gate));a.path=[];return}
     if(a.effects.stun){a.moving=false;return}
-    const candidates=this.enemies.filter(e=>this.health(e)>0&&distance(e,main)<(mode==='Aggressive'?139:85)&&sight(this.map,main,e,this.gate)&&(!e.warning||e.foe==='warden'||mode!=='Manual')).sort((b,c)=>distance(a,b)-distance(a,c))
-    const imminent=candidates.find(e=>e.warning&&e.warning.end-this.time<485&&(!['bolt','barrage'].includes(e.warning.pattern))&&distance(a,e.warning)<e.warning.r+8)
-    if(imminent?.warning&&mode!=='Manual'){this.stepActor(a,vector(a.x-imminent.warning.x+.1,a.y-imminent.warning.y),stats.speed*1.1,dt);return}
+    const candidates=this.enemies.filter(e=>this.health(e)>0&&distance(e,main)<(mode==='Aggressive'?139:85)&&sight(this.map,main,e,this.gate)&&(!e.warning||isBoss(e.foe)||mode!=='Manual')).sort((b,c)=>distance(a,b)-distance(a,c))
+    const imminent=candidates.find(e=>e.warning&&e.warning.end-this.time<(e.warning.pattern==='ring'?800:485)&&(!['bolt','barrage','fan','summon'].includes(e.warning.pattern))&&inTelegraph(e.warning,a,8))
+    if(imminent?.warning&&mode!=='Manual'){this.stepActor(a,retreatFrom(imminent.warning,a),stats.speed*1.1,dt);return}
     if(role==='priest'&&mode!=='Manual'){
       const low=this.party.some(p=>this.health(p)>0&&this.health(p)<this.maxHealth(p)*.64&&this.ranges(a,p,105))
       if(low&&!this.cast(a,r.skills[1]))return
@@ -497,7 +534,7 @@ export class Game {
     else if(this.auto){
       const t=this.target
       if(!t)this.clearOrder()
-      else if(this.ranges(a,t,role.range+(t.foe==='warden'?9:0))){this.basic(a,t)}
+      else if(this.ranges(a,t,role.range+(isBoss(t.foe)?9:0))){this.basic(a,t)}
       else this.approach(a,t,stats.speed,dt)
     }else if(this.destination){
       if(this.pendingFocus&&this.ranges(a,this.pendingFocus,25)){const f=this.pendingFocus;this.clearOrder();this.useFocus(f)}
@@ -524,7 +561,7 @@ export class Game {
     if(this.epoch!==epoch||this.blocked)return
     for(const [i,a] of this.party.entries())if(this.health(a)>0){
       const c=a.character!,s=statsOf(this.save,c), danger=this.enemies.some(e=>this.health(e)>0&&(e.threat===a||e.warning?.target===a))
-      c.mp=Math.min(s.maxMp,c.mp+sec*(danger?2.0:4.4));if(!danger&&this.map.id==='village')c.hp=Math.min(s.maxHp,c.hp+sec*2.8)
+      c.mp=Math.min(s.maxMp,c.mp+sec*(danger?2.0:4.4));if(!danger&&(this.map.id==='village'||this.map.id==='capital'))c.hp=Math.min(s.maxHp,c.hp+sec*2.8)
       if(a!==this.activeActor){if(a.roll){if(this.time<a.roll.until)this.stepActor(a,a.roll.dir,a.roll.speed,sec);else a.roll=undefined}else this.companionAI(a,sec,i)}
     }
     for(const a of this.enemies) this.enemyAI(a,sec)
@@ -590,9 +627,7 @@ export class Game {
   }
   recruit(id:CompanionId) {
     if(this.save.companions[id])return
-    const d=COMPANIONS[id];const c={classId:d.classId,skin:d.skin,dye:d.dye,style:d.style,mode:d.mode,level:this.save.level,hp:0,mp:0,id,equipment:{Weapon:{id:ROLES[d.classId].weapon,qty:1,plus:0},Chest:{id:'coat',qty:1,plus:0}}}
-    this.save.companions[id]=c
-    const stats=statsOf(this.save,c);c.hp=stats.maxHp;c.mp=stats.maxMp
+    const d=COMPANIONS[id];this.save.companions[id]=makeCompanion(this.save,id)
     if(this.save.active.length<2){this.save.active.push(id);this.syncParty()}
     this.mark('recruit',id,1);this.toast(`${d.name} joined the party`,'good');void this.persist()
   }
@@ -608,7 +643,12 @@ export class Game {
     if(this.save.quests[q.id]||q.after&&this.save.quests[q.after]?.state!=='done')return false
     this.save.quests[q.id]={state:'active',progress:q.objectives.map(()=>0)}
     if(q.category==='Main')this.save.tracked=q.id
-    for(const ob of q.objectives){if(ob.event==='collect'&&ob.target)this.mark('collect',ob.target,countItem(this.save.bag,ob.target),false,q.id);if(ob.event==='recruit'&&this.save.companions[ob.target as CompanionId])this.mark('recruit',ob.target,1,false,q.id)}
+    for(const ob of q.objectives){
+      if(ob.event==='collect'&&ob.target)this.mark('collect',ob.target,countItem(this.save.bag,ob.target),false,q.id)
+      if(ob.event==='recruit'&&this.save.companions[ob.target as CompanionId])this.mark('recruit',ob.target,1,false,q.id)
+      if(ob.event==='inspect'&&ob.target&&this.save.flags[`echo:${ob.target}`])this.mark('inspect',ob.target,1,false,q.id)
+      if(ob.event==='visit'&&this.map.id===ob.target)this.mark('visit',ob.target,1,false,q.id)
+    }
     this.toast(`New quest · ${q.title}`,'good');void this.persist();return true
   }
   mark(event:QuestEvent,target:string|undefined,n:number,announce=true,only?:string){
@@ -627,51 +667,105 @@ export class Game {
   track(id:string){if(this.save.quests[id]&&this.save.quests[id].state!=='done'){this.save.tracked=id;this.refresh()}}
   private finish(q:Quest) {
     const state=this.save.quests[q.id];if(state?.state!=='ready')return
-    const requested:Record<string,[string,number]>={q3:['herb',3],'side-lamps':['essence',2],'side-iron':['ore',2]}
+    const requested:Record<string,[string,number]>={q3:['herb',3],'side-lamps':['essence',2],'side-iron':['ore',2],q15:['bell-key',1]}
     const delivery=requested[q.id]
     if(delivery&&!remove(this.save.bag,...delivery)){this.toast(`Bring ${delivery[1]} × ${ITEMS[delivery[0]].name} in your bag to turn this in.`,'bad');return}
     state.state='done';this.save.gold+=q.gold;this.xp(q.xp)
-    if(q.prize&&!add(this.save.bag,q.prize))this.loot(q.prize,1,this.activeActor)
+    const prize=q.id==='q16'?this.save.flags['bell-fate']==='names'?'dawnseal':'cipherheart':q.prize
+    if(prize&&!add(this.save.bag,prize))this.loot(prize,1,this.activeActor)
     if(q.id==='q9')this.save.flags.gate=true
     if(q.next)this.startQuest(QUESTS[q.next]);else if(this.save.tracked===q.id)this.save.tracked=this.main?.id??q.id
     this.toast(`Quest complete · ${q.title}`,'good');this.render({x:this.activeActor.x,y:this.activeActor.y,kind:'cast',color:'#f2d78e',sound:'quest'});void this.persist()
-    if(q.id==='q10')this.say(q.end,q.finish,[
-      {label:'Keep the shard hidden',run:()=>this.ending('hidden','Then let the capital believe the bells only fell silent. We owe the dead one more quiet night.')},
-      {label:'Warn the kingdom',run:()=>this.ending('warned','Then I will write it in my own hand, and sign the name I should have signed the first time.')},
-    ],'A choice at the end of Chapter I')
-    else this.say(q.end,q.finish,[],q.title)
+    if(q.id==='q10')this.say(q.end,QUESTS.q10.finish,this.shardChoices(),'A choice at the end of Chapter I')
+    else if(q.id==='q11'){
+      const branch=this.entry==='warned'?'Your letter reached the Crown before it reached Iona. Two men with bronze shields followed me as far as the canal. They’ll be watching the public stair.':'Good. The Crown is still looking in the forest. I know a way through the canal. By the time they look down, we’ll be inside.'
+      this.say('veyra',[branch,...q.finish],[],q.title)
+    }else if(q.id==='q12'){
+      const line=this.entry==='warned'?'Use the eastern public stair. The Crown is reading your letter in every ward. Veyra sent word ahead, but the two bailiffs have orders to hold the archive.':'Use the culvert south of the western bridge. There’s a bronze basket by the drain. Keep your feet out of the silt; the things there can hear you walk.'
+      this.say('iona',[line,...q.finish],[],q.title)
+    }else if(q.id==='q14'){
+      this.say('seris-archive',this.save.active.includes('tarek')?BELL_REVELATION:BELL_REVELATION.filter(l=>typeof l==='string'||l.speaker!=='tarek'),[],q.title)
+    }else if(q.id==='q15'){
+      this.say('bell-altar',[...q.finish,...BELL_VISION],[],'An echo in the bronze','/art/bell-sanctum.webp')
+    }else if(q.id==='q16'){
+      const open=this.save.flags['bell-fate']==='names'
+      this.chapterSignal=2
+      this.say('iona',[open?'I’ll read the names in the square. When the Crown asks who stands witness, I’ll let the crowd answer.':'I’ll bring the book door to door. Some people will need time before they’re ready to hear a knock.',...q.finish],[],'Chapter II complete · The Bell Below','/art/vesperhold.webp')
+    }else this.say(q.end,q.finish,[],q.title)
   }
-  private ending(decision:string,text:string){this.save.flags.decision=decision;this.chapterSignal=true;void this.persist();this.say('tarek',[text,'The dawn comes late to Lumenford. Far in the north, another bell answers. Ashen Pass is open now.'],[],'Chapter I complete · The Broken Seal')}
-  say(id:string,lines:string[],choices:Choice[]=[],caption=CAPTIONS[id]??'The Broken Seal'){
-    this.clearOrder();this.resetInput();this.dialog={speaker:NAMES[id]??id,portrait:id,caption,lines,index:0,choices};this.refresh()
+  private shardChoices(fromPass=false):Choice[]{return [
+    {label:'Keep the shard hidden',run:()=>this.ending('hidden','Then let the capital believe the bells only fell silent. We owe the dead one more quiet night.',fromPass)},
+    {label:'Warn the kingdom',run:()=>this.ending('warned','Then I will write it in my own hand, and sign the name I should have signed the first time.',fromPass)},
+  ]}
+  private ending(decision:'hidden'|'warned',text:string,fromPass=false){
+    if(this.save.flags.decision)return
+    this.save.flags.decision=decision;this.chapterSignal=1;void this.persist()
+    if(fromPass){this.mark('talk','veyra',1);this.finish(QUESTS.q11);return}
+    this.say('tarek',[text,'The dawn comes late to Lumenford. Far in the north, another bell answers. Ashen Pass is open now.'],[],'Chapter I complete · The Broken Seal')
   }
-  next(){if(!this.dialog)return;const d=this.dialog;if(d.index<d.lines.length-1){d.index++;this.refresh()}else if(!d.choices.length)this.dismiss()}
-  dismiss(){this.dialog=null;this.refresh()}
-  choose(choice:Choice){if(!this.dialog)return;this.dialog=null;choice.run();this.refresh()}
+  private chooseFate(){
+    this.say('iona',['I can read each name in the square and make the Crown hear them. Or I can take the book to the families and let them decide when to speak.','There’s strength in a square full of voices. There’s also a kind of strength in being the first person to knock quietly.'],[
+      {label:'Read the names in public',run:()=>this.endBell('names')},
+      {label:'Shelter the names with the families',run:()=>this.endBell('sheltered')},
+    ],'When the Bell Forgets')
+  }
+  private endBell(fate:'names'|'sheltered'){
+    if(this.save.quests.q16?.state==='done')return
+    this.save.flags['bell-fate']=fate;this.mark('talk','iona',1);this.finish(QUESTS.q16)
+  }
+  private setSpeaker(d:Conversation){
+    const line=d.lines[d.index],id=typeof line==='string'?d.origin:line.speaker,p=personFor(id)
+    d.portrait=personaId(id);d.speaker=p?.name??NAMES[id]??id
+    if(p)this.save.flags[`met:${p.id}`]=true
+  }
+  say(id:string,lines:StoryLine[],choices:Choice[]=[],caption=personFor(id)?.title??CAPTIONS[id]??'From the Chronicle',art?:string){
+    this.clearOrder();this.resetInput();this.dialog={speaker:id,portrait:id,origin:id,caption,lines,index:0,choices,art};this.setSpeaker(this.dialog);this.refresh()
+  }
+  next(){if(!this.dialog)return;const d=this.dialog;if(d.index<d.lines.length-1){d.index++;this.setSpeaker(d);this.refresh()}else if(!d.choices.length)this.dismiss()}
+  dismiss(){if(this.dialog){this.dialog=null;this.refresh();void this.persist()}}
+  choose(choice:Choice){if(!this.dialog||!this.dialog.choices.includes(choice)||this.dialog.index<this.dialog.lines.length-1)return;this.dialog=null;choice.run();this.refresh()}
   private speak(f:Feature){
     const choices:Choice[]=[];const main=this.main
-    let lines=[NPC_TEXT[f.id]??'The road is quiet today.']
+    let lines=[NPC_TEXT[personaId(f.id)]??'The road is quiet today.']
     const ready=QUEST_LIST.filter(q=>q.end===f.id&&this.save.quests[q.id]?.state==='ready')
-    for(const q of ready)choices.push({label:`Report: ${q.title}`,run:()=>this.finish(q)})
+    for(const q of ready)choices.push({label:`Report: ${q.title}`,run:()=>q.id==='q16'?this.chooseFate():this.finish(q)})
     if(main?.giver===f.id&&this.save.quests[main.id].state==='active')lines=[main.begin]
-    if(f.id==='tarek'||f.id==='lyra'){
-      const id=f.id
-      if(this.save.quests.q6?.state==='done'&&!this.save.companions[id])choices.push({label:`Recruit ${COMPANIONS[id].name}`,run:()=>{
+    if(f.id==='veyra'&&main?.id==='q11'&&this.save.quests.q11.state==='active')choices.push({label:'Show Veyra the Oath Shard',run:()=>{
+      if(!this.save.flags.decision){this.say('veyra',['I can still get a letter to the city before we’re seen. What did you intend to tell the Crown?'],this.shardChoices(true),'The unfinished choice');return}
+      this.mark('talk',f.id,1);this.finish(main)
+    }})
+    if(f.id==='iona'&&main?.id==='q12'&&this.save.quests.q12.state==='active'){
+      if(this.save.quests.q12.progress[0])choices.push({label:'Ask about the erased names',run:()=>{this.mark('talk',f.id,1);this.finish(main)}})
+      else lines.push('Read the census in the square first. Note where the rows have been cut away. That tells you more than the numbers do.')
+    }
+    if(f.id==='seris-archive'&&main?.id==='q14'&&this.save.quests.q14.state==='active')choices.push({label:'Hear what happened at the seal',run:()=>{this.mark('talk',f.id,1);this.finish(main)}})
+    if(f.id==='iona'&&main?.id==='q16'&&this.save.quests.q16.state==='active')choices.push({label:'Decide what happens to the names',run:()=>this.chooseFate()})
+    if(f.id==='gatekeeper')lines=[this.save.flags['bell-fate']==='names'?'My father was on that list. All this time I thought he’d deserted. I don’t know how to take my helmet off in front of you.':this.entry==='warned'?'Your captain’s letter is on every desk in the city. That doesn’t mean it’s being read.':'It’s quiet on the census today. That usually means someone is working very hard to keep it that way.']
+    if(f.id==='mira'&&this.save.quests['side-letter']?.state==='done')lines=[this.save.flags['bell-fate']==='names'?'Iona said Meret’s name to a whole square of people. I heard it all the way out here.':this.save.flags['bell-fate']==='sheltered'?'Iona kept my daughter’s name between us. I’ll say it to the street when I’m ready.':'I’ve put Meret’s letter on the sill. She always knew how to bring a little light in.']
+    if(f.id==='iona'&&this.save.quests.q16?.state==='done')lines=[this.save.flags['bell-fate']==='names'?'Yesterday the chapel opened without a birth roll. There was a queue this morning.':'The first family came to the archives today. They asked what the pages could remember. We found out together.']
+    const id=personaId(f.id)
+    if(id==='tarek'||id==='lyra'||id==='veyra'){
+      const canRecruit=id==='veyra'?this.save.quests.q11?.state==='done':this.save.quests.q6?.state==='done'
+      if(canRecruit&&!this.save.companions[id])choices.push({label:`Recruit ${COMPANIONS[id].name}`,run:()=>{
         this.recruit(id)
-        const q=this.main;if(q?.end===id&&this.save.quests[q.id].state==='ready')this.say(id,[`I’m with you, ${this.save.name}. Let’s see where that road leads.`],[{label:`Report: ${q.title}`,run:()=>this.finish(q)}]);else this.say(id,[`I’m with you, ${this.save.name}. Let’s see where that road leads.`])
+        const q=this.main, response=id==='veyra'?'I know every door in Vesperhold that shouldn’t open. If your party is full, keep me in reserve until you need one.':`I’m with you, ${this.save.name}. Let’s see where that road leads.`
+        if(q?.end===f.id&&this.save.quests[q.id].state==='ready')this.say(id,[response],[{label:`Report: ${q.title}`,run:()=>this.finish(q)}]);else this.say(id,[response])
       }})
     }
     for(const q of QUEST_LIST)if(q.category==='Side'&&q.giver===f.id&&!this.save.quests[q.id]&&(!q.after||this.save.quests[q.after]?.state==='done')&&(q.id!=='side-lyra'||this.save.companions.lyra))choices.push({label:`Ask about ${q.title}`,run:()=>this.say(f.id,[q.begin],[{label:'Accept quest',run:()=>{this.startQuest(q)}},{label:'Not now',run:()=>{}}],q.title)})
-    if(f.id==='corin')choices.push({label:'Browse wares',run:()=>this.setPanel('shop')})
-    if(f.id==='mara')choices.push({label:'Use the forge',run:()=>this.setPanel('forge')})
+    if(f.id==='ren')lines=['I’ve kept the window light on. If you walk out with anything down there, I want it to know where the road ends.']
+    if(f.id==='forge-city')lines=['Bronze from the archives tempers well. Beats putting your ear to it and asking what it’s for.']
+    if(f.id==='corin'||f.id==='ren')choices.push({label:'Browse wares',run:()=>this.setPanel('shop')})
+    if(f.id==='mara'||f.id==='forge-city')choices.push({label:'Use the forge',run:()=>this.setPanel('forge')})
     if(f.id==='lyra')choices.push({label:'Rest and recover',run:()=>{this.recover();this.toast('The party is restored','good');void this.persist()}})
     if(f.id==='seris'&&this.save.quests.q4?.state==='active'&&!this.save.quests.q4.progress[0])choices.push({label:'Show Seris the sigil',run:()=>{this.mark('talk','seris',1);this.say('seris',['There’s a waystone east of the camp, near the pool. Touch it and tell me whose voice you hear.'])}})
-    if(f.id==='tarek'&&this.save.quests.q10?.state==='done'&&!this.save.flags.decision)choices.push({label:'Decide the shard’s fate',run:()=>this.say('tarek',QUESTS.q10.finish,[{label:'Keep the shard hidden',run:()=>this.ending('hidden','It stays with us, then.')},{label:'Warn the kingdom',run:()=>this.ending('warned','I’ll write to the capital tonight.')}])})
+    if(f.id==='tarek'&&this.save.quests.q10?.state==='done'&&!this.save.flags.decision)choices.push({label:'Decide the shard’s fate',run:()=>this.say('tarek',QUESTS.q10.finish,this.shardChoices())})
     if(f.id==='tarek'&&this.save.quests.q1.state==='active')lines=[QUESTS.q1.begin,`${ROLES[this.save.hero.classId].name} or no, don’t stand in its light. Click the spark to engage, or press Tab then use a skill.`]
     this.say(f.id,lines,choices)
   }
-  get mapFeatures(){return this.map.features.filter(f=>f.kind==='exit'||((!f.needs||!!this.save.quests[f.needs])&&!this.harvested.has(f.id)&&!this.save.flags[`taken:${f.id}`]))}
-  unlocked(f:Feature){return !f.needs||this.save.quests[f.needs]?.state==='done'||!!this.save.flags[f.needs]}
+  get mapFeatures(){return this.map.features.filter(f=>this.onRoute(f)&&(f.kind==='exit'||((!f.needs||!!this.save.quests[f.needs])&&!this.harvested.has(f.id)&&!this.save.flags[`taken:${f.id}`])))}
+  onRoute(f:Feature){return !f.entry||this.entry===f.entry}
+  unlocked(f:Feature){return this.onRoute(f)&&(!f.needs||this.save.quests[f.needs]?.state==='done'||!!this.save.flags[f.needs])}
   focuses():Focus[]{
     const verb={npc:'Talk',exit:'Travel',loot:'Gather',shrine:'Rest & save',inspect:'Examine',rune:'Touch',chest:'Open'}
     return [...this.mapFeatures.map(f=>({label:f.name,action:verb[f.kind],x:f.x,y:f.y,key:f.id,feature:f})),...this.drops.map(d=>({label:d.stack?ITEMS[d.stack.id].name:`${d.gold} gold`,action:'Pick up',x:d.x,y:d.y,key:d.key,drop:d}))]
@@ -701,7 +795,29 @@ export class Game {
       }
       case 'inspect':{
         if(f.id==='inscription'){this.say(f.id,['Ember first remembers what the water takes; only then may the thorn be laid.','Three marks glow on the map: Ember in the west, Tide to the north, Thorn to the south.']);return}
-        if(f.id==='horizon'){this.say('Kingdom Overlook',['Dawn touches the capital. In the west, a second sun is still rising.','The Broken Seal is complete. The road beyond Ashen Pass belongs to a future chapter.']);return}
+        if(f.id==='horizon'){this.say('Kingdom Overlook',['Twice the eclipse has crossed the capital. There is only one sun.','Below the arch, a woman holds her cloak against the wind. She watches the road, not the city.'],[],'Chapter II · The Bell Below','/art/vesperhold.webp');return}
+        const echo=ECHO_BY_ID[f.id]
+        if(echo){
+          if(!this.save.flags[`echo:${f.id}`]){this.save.flags[`echo:${f.id}`]=true;this.toast(`Memory recorded · ${echo.title}`,'good')}
+          this.mark('inspect',f.id,1);this.say(echo.title,[echo.text],[],echo.excerpt,echo.art);void this.persist();return
+        }
+        if(f.id==='west-wheel'||f.id==='east-wheel'){
+          if(this.gate||this.save.flags[f.id]){this.toast(this.gate?'The bridge is open':'This wheel is set. Find the other one.');return}
+          this.save.flags[f.id]=true;this.mark('inspect',f.id,1)
+          this.save.flags['water-gates']=Boolean(this.save.flags['west-wheel']&&this.save.flags['east-wheel'])
+          this.render({x:f.x,y:f.y,kind:'burst',color:'#a9e3da',size:28,sound:'chime'})
+          this.toast(this.gate?'Both wheels are set · The central grating is open':'One wheel turns · Find the other wheel','good');void this.persist();return
+        }
+        if(f.id==='census-stone'){
+          this.mark('inspect',f.id,1)
+          this.say(f.id,['Households: 7,214. Residents: 19,903. Above the total, several rows have been scraped so deep that rain pools in the letters.','At the bottom, a single name remains. Caldus. Next to it is a word you can barely make out: “Paid.”']);return
+        }
+        if(f.id==='bell-altar'&&this.save.quests.q15?.state!=='ready'){
+          this.say(f.id,[this.save.quests.q15?.state==='done'?'Nothing in the bronze asks you to stay. The mark on your hand no longer hurts.':'There is an empty slot in the altar. You can hear something walking between the columns.']);return
+        }
+        if(f.id==='sealing-press'&&this.save.quests.q13?.state!=='ready'){
+          this.say(f.id,[this.save.quests.q13?.state==='done'?'A narrow strip of ink runs towards Seris’s hand.':'When the Husk moves, something printed inside it moves a moment later.']);return
+        }
         if(f.id==='veilstone'&&!this.save.quests.q4?.progress[0]){this.say(f.id,['The stone is cold. Seris may know how to wake it.']);return}
         this.mark('inspect',f.id,1)
         const ending=QUEST_LIST.find(q=>q.end===f.id&&this.save.quests[q.id]?.state==='ready')
@@ -717,16 +833,17 @@ export class Game {
     const state=this.save.quests[q.id], index=q.objectives.findIndex((o,i)=>state.progress[i]<o.count), ob=q.objectives[index]
     let region:RegionId=ob?.map??'village',points:Point[]=[]
     let text=ob?`${ob.label}${ob.count>1&&ob.event!=='move'?` · ${state.progress[index]}/${ob.count}`:''}`:'Return to report your findings'
-    if(!ob){for(const m of Object.values(MAPS)){const f=m.features.find(f=>f.id===q.end);if(f){region=m.id;points=[f];text=`Return to ${f.name}`;break}}}
+    if(!ob){for(const m of Object.values(MAPS)){const f=m.features.find(f=>f.id===q.end);if(f){region=m.id;points=[f];text=f.kind==='inspect'?`Examine ${f.name}`:`Return to ${f.name}`;break}}}
     else {
       const m=MAPS[region]
-      if(ob.event==='kill')points=m.id===this.map.id?this.enemies.filter(a=>a.foe===ob.target&&a.hp>0):m.spawns.filter(s=>s.id===ob.target)
-      if(ob.event==='collect')points=[...m.features.filter(f=>f.item===ob.target&&(!this.harvested.has(f.id)||m.id!==this.map.id)),...(this.save.drops[region]??[]).filter(d=>d.stack?.id===ob.target)]
+      if(ob.event==='kill')points=m.id===this.map.id?this.enemies.filter(a=>a.foe===ob.target&&a.hp>0):m.spawns.filter(s=>s.id===ob.target&&(!s.entry||s.entry===this.entry))
+      if(ob.event==='collect')points=[...m.features.filter(f=>this.onRoute(f)&&f.item===ob.target&&!this.save.flags[`taken:${f.id}`]&&(!this.harvested.has(f.id)||m.id!==this.map.id)),...(this.save.drops[region]??[]).filter(d=>d.stack?.id===ob.target)]
       if(ob.event==='talk'||ob.event==='inspect'||ob.event==='recruit')points=m.features.filter(f=>f.id===ob.target)
       if(ob.event==='puzzle')points=m.features.filter(f=>f.kind==='rune')
       if(ob.event==='move')points=m.features.filter(f=>f.id==='tarek')
       if(ob.event==='visit')points=m.features.filter(f=>f.kind==='shrine').slice(0,1)
     }
+    if(q.id==='q13'&&region==='archive'&&this.map.id==='archive'&&this.gate&&ob?.event==='kill'&&this.activeActor.y>23*16){points=[{x:29.5*16,y:22.1*16}];text='Cross the open grating to reach the Archive Husk'}
     if(region!==this.map.id){
       const search:[RegionId,Feature|undefined][]=[[this.map.id,undefined]],seen=new Set<RegionId>([this.map.id]);let first:Feature|undefined
       while(search.length){const [r,from]=search.shift()!;if(r===region){first=from;break}for(const f of MAPS[r].features)if(f.to&&!seen.has(f.to.region)&&this.unlocked(f)){seen.add(f.to.region);search.push([f.to.region,from??f])}}

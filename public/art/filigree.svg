@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36" fill="none">
+  <defs><linearGradient id="brass" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse"><stop stop-color="#f5d5a0"/><stop offset=".45" stop-color="#a67543"/><stop offset="1" stop-color="#5d3d2c"/></linearGradient></defs>
+  <path fill="#17101e" fill-opacity=".9" d="M0 36V0h36v4L21 7l-3 8-3 3-8 3L4 36Z"/>
+  <path stroke="url(#brass)" d="M1 34V1h33M4.5 25.5V6l1.5-1.5h19.5M7 16V7h9M10 21l1-6 4-4 6-1M6 26l2-7 3-1m15-12-7 2-1 3m-2 0 1 4-2 2-4-1"/>
+  <path fill="#edca92" d="m8 6 2 2-2 2-2-2ZM15 12l2 2-2 2-2-2ZM2 30l2 2-2 2-2-2ZM32 0l2 2-2 2-2-2Z"/>
+</svg>

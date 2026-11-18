@@ -1,18 +1,24 @@
 import Phaser from 'phaser'
+import { personaId, personFor } from '../data/chronicle'
 import { ENEMIES } from '../data/enemies'
 import { TILE, random } from '../data/maps'
 import { npcLook, type Look } from '../data/npcs'
 import { audio, type Theme } from './audio'
 import { distance } from './navigation'
 import { type Actor, Game, type Visual } from './model'
-import { DIRECTIONS, FRAMES, HUMAN_H, HUMAN_W, enemyAtlas, featureTexture, groundTexture, humanAtlas, propTexture } from './pixels'
+import { DIRECTIONS, HUMAN_H, HUMAN_W, humanAtlas } from './peopleArt'
+import { FOOT_PAD, SPRITE_FRAMES } from './pixelInk'
+import { enemyAtlas, featureTexture, groundTexture, propTexture } from './pixels'
+import { isBoss } from './patterns'
 import type { Character, Point } from './types'
 
-const heightOver=(a:Actor)=>a.foe==='warden'?74:a.foe?['slime','spider','wolf'].includes(a.foe)?25:36:43
+const heightOver=(a:Actor)=>isBoss(a.foe)?85:a.foe==='archiveHusk'?61:a.foe==='guardian'?53:a.foe==='skeleton'?48:a.foe==='bailiff'?46:a.foe?['slime','spider','wolf','siltmaw'].includes(a.foe)?25:36:43
+const fliers=new Set(['wisp','bat','bellwing','omen'])
+const sceneryArt={wardhall:'/art/tiles/wardhall.png',oak:'/art/tiles/canopy-oak.png',cottage:'/art/tiles/lumen-cottage.png'}
 const color=(s:string)=>parseInt(s.slice(1),16)
 const markGold=0xf4cf83
 const uv=(i:number)=>i%1
-const particleColors={village:0xe9cd89,road:0xdbc28f,forest:0xa0cdb6,spire:0xc0a8d8,pass:0xc5dfed}
+const particleColors={village:0xe9cd89,road:0xdbc28f,forest:0xa0cdb6,spire:0xc0a8d8,pass:0xc5dfed,capital:0x91bac8,archive:0x91c1b9,bellvault:0xc0a8cd}
 type DrawEvent= Visual & { born:number; duration:number }
 export class WorldScene extends Phaser.Scene {
   private epochSeen=-1
@@ -32,7 +38,9 @@ export class WorldScene extends Phaser.Scene {
   private frameTime=0
   private victoryUntil=0
   constructor(private sim:Game){super({key:'World'})}
+  preload(){for(const [key,url] of Object.entries(sceneryArt))this.load.image(`scenery-${key}`,url)}
   create(){
+    for(const key of Object.keys(sceneryArt))if(this.textures.exists(`scenery-${key}`))this.textures.get(`scenery-${key}`).setFilter(Phaser.Textures.FilterMode.NEAREST)
     this.input.on('pointerdown',(p:Phaser.Input.Pointer)=>{if(p.button===0){audio.unlock();const v=p.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;this.sim.click(v)}})
     this.events.once(Phaser.Scenes.Events.SHUTDOWN,()=>{this.input.removeAllListeners();this.tweens.killAll()})
     this.makeGlow()
@@ -49,11 +57,11 @@ export class WorldScene extends Phaser.Scene {
     g.addColorStop(0,'rgba(255,255,255,.65)');g.addColorStop(.25,'rgba(255,255,255,.26)');g.addColorStop(.7,'rgba(255,255,255,.06)');g.addColorStop(1,'rgba(255,255,255,0)');c.fillStyle=g;c.fillRect(0,0,64,64);t.refresh()
   }
   private store(key:string,source:HTMLCanvasElement){const t=this.textures.addCanvas(key,source)!;t.setFilter(Phaser.Textures.FilterMode.NEAREST);return t}
-  private atlas(look:Look){
-    const key=`person-${look.classId}-${look.dye}-${look.skin}-${look.style}`
+  private atlas(look:Look,id?:string){
+    const person=id&&personFor(id)?.id,key=`person-${person??'custom'}-${look.classId}-${look.dye}-${look.skin}-${look.style}`
     if(!this.textures.exists(key)){
-      const t=this.store(key,humanAtlas(look.classId,look.dye,look.skin,look.style))
-      for(let dir=0;dir<4;dir++)for(let f=0;f<FRAMES;f++)t.add(dir*FRAMES+f,0,f*HUMAN_W,dir*HUMAN_H,HUMAN_W,HUMAN_H)
+      const t=this.store(key,humanAtlas(look.classId,look.dye,look.skin,look.style,person||undefined))
+      for(let dir=0;dir<4;dir++)for(let f=0;f<SPRITE_FRAMES;f++)t.add(dir*SPRITE_FRAMES+f,0,f*HUMAN_W,dir*HUMAN_H,HUMAN_W,HUMAN_H)
     }
     return key
   }
@@ -61,7 +69,7 @@ export class WorldScene extends Phaser.Scene {
     const key=`monster-${a.foe}`
     if(!this.textures.exists(key)){
       const {a:image,w,h}=enemyAtlas(a.foe!),t=this.store(key,image)
-      for(let dir=0;dir<2;dir++)for(let f=0;f<FRAMES;f++)t.add(dir*FRAMES+f,0,f*w,dir*h,w,h)
+      for(let dir=0;dir<2;dir++)for(let f=0;f<SPRITE_FRAMES;f++)t.add(dir*SPRITE_FRAMES+f,0,f*w,dir*h,w,h)
     }
     return key
   }
@@ -75,7 +83,7 @@ export class WorldScene extends Phaser.Scene {
     for(const map of [this.actors,this.features,this.labels]){for(const o of map.values())o.destroy();map.clear()}
     this.tweens.killAll();this.drawEvents=[];this.water=[]
     const map=this.sim.map
-    const camera=this.cameras.main;camera.setBackgroundColor(map.id==='spire'?0x131521:0x233533)
+    const camera=this.cameras.main;camera.setBackgroundColor(map.id==='spire'||map.id==='bellvault'?0x131521:map.id==='capital'||map.id==='archive'?0x101e2a:0x233533)
     camera.setBounds(0,0,map.w*TILE,map.h*TILE)
     for(let y=0;y<map.h;y+=16)for(let x=0;x<map.w;x+=16){
       const key=`ground-${map.id}-${x}-${y}`,w=Math.min(16,map.w-x),h=Math.min(16,map.h-y)
@@ -83,15 +91,27 @@ export class WorldScene extends Phaser.Scene {
       this.environment.push(this.add.image(x*TILE,y*TILE,key).setOrigin(0).setDepth(-2100))
     }
     for(const [i,p] of map.props.entries()){
-      const key=`prop-${map.id}-${p.kind}-${p.variant}`
+      const painted=p.kind==='house'&&map.id==='village'&&p.variant!==1?'cottage':p.kind==='wardhall'||p.kind==='oak'&&map.id!=='pass'?p.kind:null
+      const imported=painted&&this.textures.exists(`scenery-${painted}`),key=imported?`scenery-${painted}`:`prop-${map.id}-${p.kind}-${p.variant}`
       if(!this.textures.exists(key))this.store(key,propTexture(p.kind,p.variant,map.id))
-      const pic=this.add.image(p.x,p.y+7,key).setOrigin(.5,1).setDepth(p.y)
+      if(imported&&painted==='cottage')this.environment.push(this.add.ellipse(p.x,p.y-2,112,21,0x18141d,.45).setDepth(-1955))
+      if(imported&&p.kind==='oak')this.environment.push(this.add.ellipse(p.x+2,p.y+1,47,9,0x101c20,.51).setDepth(-1955))
+      const pic=this.add.image(p.x,p.y+(imported?2:7),key).setOrigin(.5,1).setDepth(p.y)
+      if(imported){
+        const width=painted==='cottage'?110:p.kind==='wardhall'?119:64+p.variant*4
+        pic.setDisplaySize(width,painted==='cottage'?72:width*pic.frame.height/pic.frame.width)
+        if(painted==='cottage'&&p.variant===2)pic.setTint(0xd7cfe9)
+        if(p.kind==='oak')pic.setTint(map.id==='forest'?0x9fc5a3:map.id==='capital'?0xadbbc0:0xd2d8a4)
+      }
       this.environment.push(pic);this.props.set(String(i),pic)
       if(p.kind==='lamp')this.light(p.x+6,p.y-19,0xffb268,1.24,.45)
       if(p.kind==='crystal')this.light(p.x,p.y-13,p.variant%2?0xbe86c3:0x8ddfc0,1,.42)
-      if(p.kind==='house'){this.light(p.x-24,p.y-10,0xffb573,1.05,.23);this.light(p.x+26,p.y-10,0xffb573,.91,.26)}
+      if(p.kind==='bell')this.light(p.x,p.y-31,0xcba59b,3.5,.45)
+      if(p.kind==='wardhall'){this.light(p.x-24,p.y-24,0xffba73,1.9,.41);this.light(p.x+20,p.y-15,0xffbf9c,1.6,.31)}
+      if(p.kind==='shelf'||p.kind==='organ')this.light(p.x,p.y-10,0x6a9eab,1.5,.38)
+      if(p.kind==='house'||p.kind==='balcony'){this.light(p.x-24,p.y-10,0xffb573,1.05,.23);this.light(p.x+26,p.y-10,0xffb573,.91,.26)}
     }
-    const rng=random(map.seed*1951);this.ambient=Array.from({length:map.id==='pass'?63:43},()=>({x:rng()*1280,y:rng()*710,v:5+rng()*18,p:rng()}))
+    const rng=random(map.seed*1951);this.ambient=Array.from({length:map.id==='capital'?97:map.id==='pass'?63:43},()=>({x:rng()*1280,y:rng()*710,v:5+rng()*18,p:rng()}))
     map.tiles.forEach((t,i)=>{if(t==='water'&&rng()<.34)this.water.push({x:(i%map.w+.15+rng()*.55)*TILE,y:(Math.floor(i/map.w)+.2+rng()*.62)*TILE})})
     this.updateActors()
     const p=this.sim.activeActor;camera.centerOn(p.x,p.y-16)
@@ -113,14 +133,14 @@ export class WorldScene extends Phaser.Scene {
     for(const [id,s] of this.actors)if(!ids.has(id)){s.destroy();this.actors.delete(id)}
     for(const a of all){
       const char=a.character as Character|undefined
-      const s=this.sprite(a,char?this.atlas(char):this.getEnemy(a))
-      const living=this.sim.health(a)>0,body=a.foe==='warden'?88:a.foe?43:HUMAN_H,yLift=a.foe==='wisp'||a.foe==='bat'?Math.sin(t/240+a.x)*2:0
+      const s=this.sprite(a,char?this.atlas(char,a.key):this.getEnemy(a))
+      const living=this.sim.health(a)>0,body=s.frame.height,yLift=a.foe&&fliers.has(a.foe)?-Math.round(Math.sin(t/240+a.x)*2):0
       const dir=char?DIRECTIONS.indexOf(a.facing):a.facing==='west'?1:0
       const anim=a.animation&&t<a.animation.until?a.animation:null
-      const frame=!living?7:a.hurt>t?7:a.roll?8:anim?anim.id==='slash'?5:6:a.warning?6:a.moving?1+Math.floor(t/(a.foe==='warden'?160:105))%4:a.foe==='wisp'||a.foe==='bat'||a.foe==='omen'?Math.floor(t/135)%5:0
+      const frame=!living?7:a.hurt>t?7:a.roll?8:anim?anim.id==='slash'?5:anim.id==='dash'?8:6:a.warning?6:a.moving?1+Math.floor(t/(isBoss(a.foe)?160:105))%4:a.foe&&fliers.has(a.foe)?Math.floor(t/135)%5:0
       const death=a.deadAt?t-a.deadAt:1000
-      s.setVisible(living||death<590).setFrame(dir*FRAMES+frame).setPosition(Math.round(a.x),Math.round(a.y+3+yLift+(living?0:Math.min(12,death/38)))).setDepth(a.y+(a===this.sim.activeActor ? .1 : 0))
-      s.setAlpha(living?(a.effects.veil?.end??0)>t?.52:1:Math.max(0,1-death/590)).setAngle(living?a.roll?(a.aim.x<0?-1:1)*20:0:a.foe==='warden'?Math.min(11,death/50):Math.min(27,death/10)).setDisplaySize(s.frame.width,body*(living?1:Math.max(.55,1-death/1700)))
+      s.setVisible(living||death<590).setFrame(dir*SPRITE_FRAMES+frame).setPosition(Math.round(a.x),Math.round(a.y+FOOT_PAD+yLift+(living?0:Math.min(12,death/38)))).setDepth(a.y+(a===this.sim.activeActor ? .1 : 0))
+      s.setAlpha(living?(a.effects.veil?.end??0)>t?.52:1:Math.max(0,1-death/590)).setAngle(living?a.roll?(a.aim.x<0?-1:1)*20:0:isBoss(a.foe)?Math.min(11,death/50):Math.min(27,death/10)).setDisplaySize(s.frame.width,body*(living?1:Math.max(.55,1-death/1700)))
       if(a.hurt>t&&living)s.setTintFill(0xffd7bf);else if(a.vulnerable>t&&living)s.setTint(0xf1e0a4);else s.clearTint()
       if(a===this.sim.activeActor&&this.follow!==a.key){this.follow=a.key;this.cameras.main.startFollow(s,true,.13,.13,0,12)}
     }
@@ -131,23 +151,24 @@ export class WorldScene extends Phaser.Scene {
     for(const f of mapFeatures){
       needed.add(f.id)
       const look=f.kind==='npc'?npcLook(f.id):undefined
-      const type=f.kind==='loot'?f.item==='herb'?'herb':f.item==='ore'?'ore':'scroll':f.kind
-      const variant=f.kind==='exit'?this.sim.unlocked(f)?0:1:f.kind==='rune'?f.id==='tide'?1:f.id==='thorn'?2:0:0
-      const key=look?this.atlas(look):this.featureKey(type,variant)
+      const type=f.icon??(f.kind==='loot'?f.item==='herb'?'herb':f.item==='ore'?'ore':'scroll':f.kind)
+      const variant=f.kind==='exit'?this.sim.unlocked(f)?0:1:f.kind==='rune'?f.id==='tide'?1:f.id==='thorn'?2:0:type==='wheel'&&this.sim.save.flags[f.id]?1:0
+      const key=look?this.atlas(look,personaId(f.id)):this.featureKey(type,variant)
       let pic=this.features.get(f.id)
-      if(!pic){pic=this.add.image(f.x,f.y+(look?3:7),key,look?0:undefined).setOrigin(.5,1).setDepth(f.y+.06);this.features.set(f.id,pic)}
+      if(!pic){pic=this.add.image(f.x,f.y+(look?FOOT_PAD:7),key,look?0:undefined).setOrigin(.5,1).setDepth(f.y+.06);this.features.set(f.id,pic)}
       else if(pic.texture.key!==key)pic.setTexture(key)
+      if(type==='echo')pic.setAlpha(this.sim.save.flags[`echo:${f.id}`]?.62:1)
       if(f.kind==='rune')pic.setAlpha(this.sim.save.flags.runes||(f.id==='ember'&&this.sim.runeIndex>0)||(f.id==='tide'&&this.sim.runeIndex>1)?1:.62)
       if(f.kind==='npc'&&(track(f)||distance(this.sim.activeActor,f)<63)||f.kind==='exit'||track(f)&&f.kind!=='loot'){
-        const label=this.label(f.id,f.name);label.setPosition(Math.round(f.x),Math.round(f.y-(look?45:31))).setVisible(true).setColor(track(f)?'#f4d693':f.kind==='exit'?(variant?'#b0aaa0':'#b0ded1'):'#e4d7bc')
+        const label=this.label(f.id,f.name);label.setPosition(Math.round(f.x),Math.round(f.y-(look?52:31))).setVisible(true).setColor(track(f)?'#f4d693':f.kind==='exit'?(variant?'#b0aaa0':'#b0ded1'):'#e4d7bc')
       }else this.labels.get(f.id)?.setVisible(false)
-      if(track(f))this.diamond(this.glow,f.x,f.y-(look?56:42)+Math.sin(t/330)*2,markGold,4)
+      if(track(f))this.diamond(this.glow,f.x,f.y-(look?62:42)+Math.sin(t/330)*2,markGold,4)
       if(!look&&['exit','shrine','rune'].includes(f.kind)){
         this.scenery.lineStyle(1,variant?0xb9aa90:f.kind==='shrine'?markGold:0x92d6bc,.19+Math.sin(this.frameTime/540)*.055).strokeEllipse(f.x,f.y,f.kind==='exit'?30:25,9)
       }
     }
     for(const d of drops){
-      needed.add(d.key);const key=this.featureKey(d.gold?'coin':d.stack?.id==='dispatch'?'scroll':'drop');let slot=this.features.get(d.key)
+      needed.add(d.key);const key=this.featureKey(d.gold?'coin':d.stack?.id==='dispatch'?'scroll':d.stack?.id==='bell-key'?'clapper':'drop');let slot=this.features.get(d.key)
       if(!slot){slot=this.add.image(d.x,d.y+7,key).setOrigin(.5,1).setDepth(d.y);this.features.set(d.key,slot)}
       slot.y=d.y+7+Math.round(Math.sin(t/270+d.x)*1.5)
       const tint=d.stack?.id==='shard'?0xefbcf6:d.gold?markGold:0xd6bade
@@ -155,6 +176,11 @@ export class WorldScene extends Phaser.Scene {
       this.glow.lineStyle(1,tint,.18).lineBetween(d.x,d.y-13,d.x,d.y-22-Math.sin(t/290)*3)
     }
     for(const [id,o] of this.features)if(!needed.has(id)){o.destroy();this.features.delete(id);this.labels.get(id)?.destroy();this.labels.delete(id)}
+    if(this.sim.map.id==='archive'&&!this.sim.gate){
+      const g=this.glow,x=26*16,y=21*16
+      g.fillStyle(0x162634,.78).fillRect(x,y-16,112,18);g.lineStyle(2,0x90bbbe,.82).lineBetween(x,y-3,x+112,y-3)
+      for(let i=0;i<=14;i++){const xx=x+i*8;g.fillStyle(i%2?0x738f96:0x3a5765,.9).fillRect(xx,y-23,3,26);g.fillStyle(0xc1956c,.71).fillRect(xx,y-23,3,2)}
+    }
     if(this.sim.map.id==='spire'&&!this.sim.gate){
       const g=this.glow;g.lineStyle(2,0x78c5c0,.77);for(let i=0;i<7;i++)g.lineBetween(600+i*2,318,600+i*2,400);g.fillStyle(0x47878f,.2).fillRect(600,317,13,83)
     }
@@ -176,23 +202,39 @@ export class WorldScene extends Phaser.Scene {
     for(const a of party){
       if(this.sim.health(a)<=0)continue
       const x=Math.round(a.x),y=Math.round(a.y), selected=a===this.sim.target,hero=a===this.sim.activeActor, e=a.foe?ENEMIES[a.foe]:null
-      const wide=a.foe==='warden'?53:a.foe==='wolf'?32:22
+      const wide=isBoss(a.foe)?54:a.foe==='wolf'||a.foe==='siltmaw'||a.foe==='archiveHusk'?34:22
       u.fillStyle(0x0d181e,.53).fillEllipse(x,y+1,wide,8)
       if(hero||selected){u.lineStyle(1,hero?0xe6d6a2:0xe99d8d,.75).strokeEllipse(x,y+1,wide+5,9);if(selected)u.fillStyle(0xcf746b,.13).fillEllipse(x,y+1,wide+5,11)}
       if(a.effects.shield){this.glow.lineStyle(1,0xa2dac2,.43).strokeEllipse(x,y-13,26,29)}
       if(a.vulnerable>t){this.glow.lineStyle(1,markGold,.63).strokeEllipse(x,y-31,44,56)}
       if(a.warning){
-        const w=a.warning,k=Phaser.Math.Clamp((t-w.start)/(w.end-w.start),0,1),c=w.pattern==='summon'?0xd7ba84:0xea938d
-        if(w.pattern==='bolt'||w.pattern==='barrage'){
-          const fan=w.pattern==='barrage'?.35:.025,len=w.pattern==='barrage'?124:75
-          u.fillStyle(c,.13+k*.15).fillTriangle(x,y,x+Math.cos(w.angle-fan)*len,y+Math.sin(w.angle-fan)*len,x+Math.cos(w.angle+fan)*len,y+Math.sin(w.angle+fan)*len)
-          u.lineStyle(1,c,.77).lineBetween(x,y,x+Math.cos(w.angle)*len,y+Math.sin(w.angle)*len)
+        const w=a.warning,k=Phaser.Math.Clamp((t-w.start)/(w.end-w.start),0,1),c=w.pattern==='summon'?0xd7ba84:w.pattern==='fan'?0xd1acdf:0xf3a18a
+        const end=(ang:number,r:number)=>({x:w.x+Math.cos(ang)*r,y:w.y+Math.sin(ang)*r})
+        if(w.pattern==='ring'){
+          const inner=w.inner!, stroke=w.r-inner
+          u.lineStyle(stroke,c,.12+k*.22).strokeCircle(w.x,w.y,inner+stroke/2)
+          u.lineStyle(1,0xf4b69c,.92).strokeCircle(w.x,w.y,w.r).strokeCircle(w.x,w.y,inner+stroke*k)
+          u.lineStyle(2,0xa8dfc9,.8).strokeCircle(w.x,w.y,inner)
+          for(let i=0;i<16;i++){const p=end(i*Math.PI/8,w.r-3);u.fillStyle(0xffc0a3,.84).fillRect(p.x-1,p.y-1,2,2)}
+        }else if(w.pattern==='charge'){
+          const length=w.length??0, nx=Math.cos(w.angle+Math.PI/2)*w.r,ny=Math.sin(w.angle+Math.PI/2)*w.r,tip=end(w.angle,length)
+          u.fillStyle(c,.14+k*.19).fillPoints([{x:w.x+nx,y:w.y+ny},{x:tip.x+nx,y:tip.y+ny},{x:tip.x-nx,y:tip.y-ny},{x:w.x-nx,y:w.y-ny}],true)
+          u.lineStyle(1,c,.94).lineBetween(w.x+nx,w.y+ny,tip.x+nx,tip.y+ny).lineBetween(w.x-nx,w.y-ny,tip.x-nx,tip.y-ny).strokeCircle(tip.x,tip.y,w.r)
+          for(let i=1;i<=3;i++){const p=end(w.angle,length*i/4),v=length*.08;u.lineStyle(1,c,.42+k*.47).strokePoints([{x:p.x-nx*.45,y:p.y-ny*.45},{x:p.x+Math.cos(w.angle)*v,y:p.y+Math.sin(w.angle)*v},{x:p.x+nx*.45,y:p.y+ny*.45}])}
+        }else if(w.pattern==='sweep'){
+          const arc=w.arc!,pts=Array.from({length:15},(_,i)=>end(w.angle-arc+i/14*arc*2,w.r))
+          u.fillStyle(c,.14+k*.22).fillPoints([{x:w.x,y:w.y},...pts],true);u.lineStyle(1,c,.94).strokePoints([{x:w.x,y:w.y},...pts],true)
+          u.lineStyle(1,c,.44+k*.36).strokePoints(Array.from({length:15},(_,i)=>end(w.angle-arc+i/14*arc*2,w.r*k)))
+        }else if(w.pattern==='bolt'||w.pattern==='barrage'||w.pattern==='fan'){
+          const fan=w.pattern==='barrage'?.35:.025,len=w.length??(w.pattern==='barrage'?124:104)
+          if(w.rays){for(const angle of w.rays){const p=end(angle,len);u.lineStyle(5,c,.11+k*.16).lineBetween(w.x,w.y,p.x,p.y);u.lineStyle(1,c,.57+k*.37).lineBetween(w.x,w.y,p.x,p.y)}}
+          else{const l=end(w.angle-fan,len),r=end(w.angle+fan,len),p=end(w.angle,len);u.fillStyle(c,.13+k*.15).fillTriangle(w.x,w.y,l.x,l.y,r.x,r.y);u.lineStyle(1,c,.77).lineBetween(w.x,w.y,p.x,p.y)}
         }else{
           u.fillStyle(c,.14+k*.20).fillCircle(w.x,w.y,w.r);u.lineStyle(1,c,.84).strokeCircle(w.x,w.y,w.r);u.lineStyle(1,c,.64).strokeCircle(w.x,w.y,Math.max(2,w.r*k));
           if(w.pattern==='spikes')for(const angle of [0,Math.PI/2,Math.PI,Math.PI*1.5])u.lineStyle(1,c,.62).lineBetween(w.x+Math.cos(angle)*w.r*.65,w.y+Math.sin(angle)*w.r*.65,w.x+Math.cos(angle)*w.r,w.y+Math.sin(angle)*w.r)
         }
       }
-      if(e&&(selected||this.sim.health(a)<e.hp||a.threat)&&a.foe!=='warden'){
+      if(e&&(selected||this.sim.health(a)<e.hp||a.threat)&&!isBoss(a.foe)){
         const yy=y-heightOver(a)-6, width=28;this.glow.fillStyle(0x121920,.93).fillRect(x-width/2-1,yy-1,width+2,4);this.glow.fillStyle(selected?0xed9a82:0xb67378,1).fillRect(x-width/2,yy,width*this.sim.health(a)/e.hp,2)
         if(selected)this.label(`enemy-${a.key}`,e.name).setPosition(x,yy-3).setVisible(true).setColor('#f2d1bf');else this.labels.get(`enemy-${a.key}`)?.setVisible(false)
       }
@@ -204,11 +246,15 @@ export class WorldScene extends Phaser.Scene {
     for(const p of this.sim.projectiles){const c=color(p.color),y=Math.round(p.y-9),x=Math.round(p.x);this.foreground.lineStyle(p.owner.foe?3:2,c,.86).lineBetween(x-p.dir.x*9,y-p.dir.y*9,x,y);this.foreground.fillStyle(0xffefc6,.87).fillRect(x-1,y-1,3,3)}
     if(this.sim.destination){const p=this.sim.destination;u.lineStyle(1,0xe4cc90,.62).strokeEllipse(p.x,p.y,11+Math.sin(t/150)*4,7);u.fillStyle(markGold,.8).fillRect(p.x,p.y,1,1)}
     if(this.sim.target&&distance(active,this.sim.target)<50&&s)this.glow.lineStyle(1,0xf3c68b,.16).lineBetween(active.x,active.y,this.sim.target.x,this.sim.target.y)
+    if(map.id==='capital'||map.id==='archive'){
+      for(const p of this.water){if((p.x*7+p.y*9)%5>1)continue;const amber=map.id==='capital'&&Math.abs(p.y-415)<27,gold=amber?0xf5a76c:0x7cb9c0,ix=Math.round(p.x+(s?Math.sin(t/740+p.y)*4:0));g.fillStyle(gold,amber?.23:.12).fillRect(ix,p.y,7+(p.x%5),1)}
+    }
     if(s){
       const k=this.frameTime/1000,c=particleColors[map.id],v=camera.worldView,gx=this.foreground
       for(const m of this.ambient){const nx=((m.x+m.v*k*.47)%Math.max(v.width,1))+v.x,ny=((m.y+(map.id==='pass'?m.v:k%2)*k*.86)%Math.max(v.height,1))+v.y
         const alpha=.15+Math.sin(k*2+m.p*23)**2*.36
-        if(map.id==='pass')gx.fillStyle(c,alpha).fillRect(Math.floor(nx),Math.floor(ny),m.p>.7?2:1,1)
+        if(map.id==='capital'){const ry=v.y+(m.y+k*m.v*5.3)%Math.max(v.height,1), rx=v.x+(m.x+k*m.v*1.4)%Math.max(v.width,1);gx.lineStyle(1,c,m.p*.19+.055).lineBetween(rx,ry,rx-2-m.p*3,ry+6+m.p*9);if(m.p>.84)g.lineStyle(1,0xb1b9c0,.20).strokeEllipse(rx-2,ry+7,6+2*Math.sin(k*6+m.p),3)}
+        else if(map.id==='pass')gx.fillStyle(c,alpha).fillRect(Math.floor(nx),Math.floor(ny),m.p>.7?2:1,1)
         else if(map.id==='road'&&m.p>.77)gx.lineStyle(1,c,.18).lineBetween(nx,ny,nx-2,ny+7)
         else gx.fillStyle(c,alpha).fillRect(Math.round(nx),Math.round(ny),m.p>.84?2:1,map.id==='forest'&&m.p>.65?2:1)
       }
@@ -234,7 +280,15 @@ export class WorldScene extends Phaser.Scene {
       const f=(t-e.born)/e.duration,k=1-f,c=color(e.color),z=e.size??21,x=e.x,y=e.y-8, angle=e.angle??0, v=e.variation??0
       if(e.kind==='slash'){
         const a0=angle-.99+f*.45,a1=angle+.97+f*.60,r=z*(.65+.35*f)
-        g.lineStyle(4-(f*2),c,k*.87).beginPath().arc(x,y,r,a0,a1).strokePath();g.lineStyle(1,0xfff0bf,k*.69).beginPath().arc(x,y,r+2,a0+.18,a1-.1).strokePath()
+        g.lineStyle(8-f*4,c,k*.22).beginPath().arc(x,y,r,a0-.12,a1+.2).strokePath()
+        g.lineStyle(4-f*2,c,k*.88).beginPath().arc(x,y,r,a0,a1).strokePath()
+        g.lineStyle(2,0xffefcf,k*.86).beginPath().arc(x,y,r+1,a0+.18,a1-.26).strokePath()
+        if(motion&&f<.65)g.lineStyle(1,c,k*.58).beginPath().arc(x,y,r-5,a0-.18,a1-.63).strokePath()
+      }else if(e.kind==='cast'||e.kind==='heal'){
+        const r=(e.kind==='heal'?19:Math.min(z,30)*.76)*(1+f*.5),tip=e.kind==='heal'?y-11-f*12:y-9
+        g.fillStyle(c,k*.17).fillCircle(x,tip,r*.64);g.lineStyle(1,c,k*.64).strokeEllipse(x,y+7,r*2,r*.74)
+        g.fillStyle(c,k*.75).fillTriangle(x-r*.52,tip,x,tip-r,x+r*.52,tip).fillTriangle(x-r*.52,tip,x,tip+r,x+r*.52,tip)
+        g.fillStyle(0xffefd0,k*.8).fillRect(Math.round(x-1),Math.round(tip-4),2,8)
       }else if(e.kind==='burst'||e.kind==='level'||e.kind==='impact'){
         const r=z*(.35+f*.68);g.fillStyle(c,k*.11).fillCircle(x,y,r*.83);g.lineStyle(2,c,k*.63).strokeCircle(x,y,r)
         if(v===8){for(let i=0;i<11;i++){const p=i*2.4, d=z*.63*(.35+uv(i*.56)),a=x+Math.cos(p)*d,b=y+Math.sin(p)*d;g.fillStyle(c,k*.8).fillTriangle(a-3,b,a+(i%2?3:-2),b-17*k,a+4,b)}}
@@ -255,7 +309,7 @@ export class WorldScene extends Phaser.Scene {
     this.updateActors();this.scenery.clear();this.underlay.clear();this.glow.clear();this.foreground.clear()
     const guide=this.sim.guidance();this.updateFeatures(guide);this.groundFx(guide);this.effects()
     const sim=this.sim,map=sim.save.region,a=sim.activeActor
-    const theme:Theme=sim.panel==='over'?'defeat':this.frameTime<this.victoryUntil?'victory':sim.dialog?'story':sim.bossSeen&&sim.boss?'boss':sim.enemies.some(e=>e.threat===a)?'combat':map==='pass'?'forest':map
+    const theme:Theme=sim.panel==='over'?'defeat':this.frameTime<this.victoryUntil?'victory':sim.dialog?'story':sim.bossSeen&&sim.boss?sim.boss.foe==='hollow'?'lastwatch':'boss':sim.enemies.some(e=>e.threat===a)?'combat':map==='pass'?'forest':map
     audio.use(theme)
   }
 }

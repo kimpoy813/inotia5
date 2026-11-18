@@ -1,0 +1,110 @@
+/* The reference-inspired art pass. Layout and hit targets remain in styles.css. */
+.title-art { background-image: url('/art/crimson-eclipse.webp'); background-position: 56% center; }
+.title-shade { background: linear-gradient(90deg,#090b16ef 0%,#0a0a15da 27%,#0b0a16a1 41%,#0a0d1912 53%,transparent 62%), linear-gradient(0deg,#0a0b16 1%,#0d0e1a76 15%,transparent 34%), linear-gradient(180deg,#100e1b90,transparent 18%); }
+.title-frame { border-color: #d0ab725a; box-shadow: inset 0 0 0 3px #1b111887,0 0 0 3px #12101866; }
+.title-frame .corner { width: clamp(22px,3vw,36px); height: clamp(22px,3vw,36px); }
+.title-frame .corner::before,.modal > .corner::before { inset: 0; width: 100%; height: 100%; border: 0; background: url('/art/filigree.svg') left top/100% 100% no-repeat; }
+.title-frame .corner::after,.modal > .corner::after { display: none; }
+.title-main h1 { text-shadow: 0 1px #f9dca585, 0 3px #6c4537,0 6px 28px #0a0912; }
+.title-main h1 span:nth-child(2) { color: #efc992; }
+.title-tagline { color: #e6d2d1; }
+.small-icon, .title-action:not(.title-action--new),.chapter-card { background: linear-gradient(125deg,#221b27f5,#0f101aeb); box-shadow: inset 0 0 0 2px #080811a1, 0 4px 19px #08091366; }
+.title-action:not(.title-action--new):hover,.chapter-card:hover { background: linear-gradient(125deg,#382737f5,#201826ee); }
+.title-action--new { background: linear-gradient(106deg,#f5dc9e,#dbb580 70%,#e3bd78); }
+.title-screen .frame-notch { background: #d4ab70; box-shadow: 0 0 9px #f6b46b6a; }
+.title-footer { text-shadow: 0 1px 4px #070611; }
+
+.creation-screen::before { background: linear-gradient(#110f1cdc,#100f1aef 55%,#0f0d16), url('/art/crimson-eclipse.webp') center 30%/cover; }
+.creation-screen--capital::before { background: linear-gradient(#111120ca,#100f1af7 67%,#0f0d16), url('/art/vesperhold.webp') center/cover; }
+.creation-panel,.modal { background: linear-gradient(145deg,#221c28f5,#12121df9); border-color: #b88d5e79; box-shadow: inset 0 0 0 2px #0e0c15, 0 12px 38px #0c0a1273; }
+.creation-panel .section-title { border-bottom: 1px solid #bd955243; padding-bottom: 8px; }
+.class-option { background: linear-gradient(100deg,#191522,#1e1924); }
+.class-option:hover,.class-option.selected { background: linear-gradient(97deg,color-mix(in srgb,var(--class-color),#1b1622 77%),#221a27); }
+.class-option > .class-avatar { width: clamp(30px,3.1vw,44px); height: clamp(30px,3.1vw,44px); overflow: hidden; border-color: #a9835689; }
+.class-avatar img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 36%; image-rendering: pixelated; }
+.hero-stage { display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(185px,1fr) auto; align-items: end; justify-content: stretch; min-height: 455px; background: #17131f; border-color: #b38b608c; box-shadow: inset 0 0 0 2px #080810,0 13px 38px #09070f7b; }
+.hero-stage::before { content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none; background: linear-gradient(180deg,#0b0a155c 0,transparent 16% 48%,#12111d4c 61%,#14121e 84%); }
+.hero-class-art { position: absolute; inset: 0 0 auto; z-index: -1; width: 100%; height: 87%; object-fit: cover; object-position: 50% 16%; image-rendering: pixelated; }
+.hero-stage-top { z-index: 1; left: 12px; top: 12px; flex-direction: row; gap: 5px; background: #141019d6; padding: 4px 7px; border: 1px solid #bf936c7a; }
+.stage-description { background: linear-gradient(0deg,#15131f 74%,#15131f66 96%,transparent); padding-bottom: 13px; }
+.stage-description h2 { text-shadow: 0 1px #995c3b77,0 2px 7px #080711; }
+.stage-description p { color: #cfcbc7; }
+.stage-skills span { background: #201b2b; border-radius: 2px; }
+.sprite-showcase { position: relative; grid-row: 1; justify-self: end; width: 119px; z-index: 2; margin: 0 10px 6px; border: 1px solid #c6a475a8; background: #161221e8; box-shadow: inset 0 0 0 2px #090812,0 7px 21px #0c08168e; }
+.sprite-stage { height: 91px; position: relative; display: grid; justify-items: center; align-items: start; isolation: isolate; background: radial-gradient(ellipse at 50% 77%,color-mix(in srgb,var(--class-color),#1b1622 86%),#15131f 76%); }
+.sprite-stage::before { position: absolute; bottom: 15px; width: 65%; height: 12px; border: 1px solid #d4b67770; border-radius: 50%; box-shadow: inset 0 2px 0 2px #06050e75,0 0 15px #b185474a; content: ''; z-index: -1; }
+.sprite-stage canvas { width: 86px; height: auto; filter: drop-shadow(0 3px 2px #080610); }
+.sprite-stage span { position: absolute; bottom: 2px; font-size: 7px; letter-spacing: .16em; text-transform: uppercase; font-weight: 700; color: #c6ad87; }
+.sprite-poses { display: grid; grid-template-columns: repeat(3,1fr); }
+.sprite-poses button { padding: 0 2px; min-width: 0; min-height: 26px; text-transform: capitalize; font-size: 9px; color: #c3b8ac; background: #17131e; border: 0; border-top: 1px solid #9e775d55; border-right: 1px solid #9e775d3f; }
+.sprite-poses button:last-child { border-right: 0; }
+.sprite-poses button:hover,.sprite-poses button[aria-pressed='true'] { background: #41303b; color: #ffe4ab; }
+
+.pixel-icon { display: block; width: min(var(--icon-size,24px),100%); height: auto; flex: 0 0 auto; image-rendering: pixelated; }
+.hud-panel { background: linear-gradient(130deg,#201a24f5,#0f121ef2); border-color: #bc945a9d; box-shadow: inset 0 0 0 1px #0b0a12, inset 0 2px #dcb88119,0 4px 15px #0b091b60; }
+.hud-face { background: radial-gradient(ellipse at center,#504355,#201b2c 68%); border: 1px solid #ab8557; border-radius: 50%; min-height: 0; align-self: center; aspect-ratio: 1; box-shadow: inset 0 0 0 2px #27192bee,0 0 9px #d5a56030; }
+.hud-face canvas { width: 100%; border-radius: 50%; align-self: center; }
+.meter { background: #0b101b; }
+.meter--hp { --meter-fill: linear-gradient(180deg,#c6565d 15%,#973747 44%,#681828); --meter-light: #f4a793; }
+.meter--mp { --meter-fill: linear-gradient(180deg,#5899bc 10%,#306685 53%,#1b385b); --meter-light: #98daf4; }
+.meter--xp { --meter-fill: linear-gradient(180deg,#dfbc7b,#96622b); }
+.tonic-strip .pixel-icon { margin: -1px 0; }
+.action-strip { box-shadow: inset 0 0 0 2px #070815,0 6px 20px #1009149e; }
+.action-tile { border: 1px solid #91754e; border-radius: 4px; background: radial-gradient(ellipse at 50% 68%,#45405a,#191825 73%); box-shadow: inset 0 0 0 2px #0d0b15c2,inset 0 2px #f4c89149; }
+.action-tile::after,.item-symbol.has-item::after {
+  content: ''; position: absolute; inset: 1px; pointer-events: none;
+  background: linear-gradient(#d3af74,#d3af74) top left/3px 1px no-repeat,linear-gradient(#d3af74,#d3af74) top right/3px 1px no-repeat,linear-gradient(#956e4f,#956e4f) bottom left/3px 1px no-repeat,linear-gradient(#956e4f,#956e4f) bottom right/3px 1px no-repeat;
+}
+.action-tile.locked::after { opacity: .44; }
+.action-tile .pixel-icon { translate: 0 2px; filter: drop-shadow(0 0 5px color-mix(in srgb,currentColor,transparent 75%)); }
+.action-tile:focus-visible { outline-offset: 0; }
+.action-attack { background: radial-gradient(ellipse at 50% 62%,#6b493f,#211525 82%); border-color: #cb9d5f; }
+.action-attack.engaged { box-shadow: inset 0 0 0 2px #47302a,0 0 10px #f9ba6c67; }
+.skill-tile:not(.locked) { background: radial-gradient(ellipse at 50% 65%,color-mix(in srgb,var(--skill-color),#1c1729 54%),#151522 78%); border-color: color-mix(in srgb,var(--skill-color),#9b7950 67%); }
+.skill-tile.locked { background: #151524; }
+.skill-tile.locked .pixel-icon { opacity: .44; filter: grayscale(.64); }
+.cooldown-mask { pointer-events: none; z-index: 1; }
+.action-tile kbd,.cooldown-num,.action-lock { z-index: 2; text-shadow: 0 1px 3px #060612; }
+.interaction-prompt { border-color: #c3a46eb0; background: linear-gradient(120deg,#28202ae8,#141420f7); }
+.world-tools .pixel-icon { translate: 0 -1px; }
+.joystick { background: radial-gradient(#57444583 18%,#201a2a99 20%,#201b2987 58%,#bc975756 60%,#19132066 65%); }
+.joystick > span { background: radial-gradient(ellipse at 48% 20%,#6f554f,#302639); }
+
+.bag-grid button,.equipment-grid button { background: linear-gradient(145deg,#211a29,#101019); box-shadow: inset 0 0 0 1px #080811; }
+.bag-grid button:hover:not(:disabled),.equipment-grid button:hover,.bag-grid button.selected,.equipment-grid button.selected { background: linear-gradient(145deg,#3e2c3a,#282134); }
+.item-symbol.has-item { box-shadow: inset 0 -2px color-mix(in srgb,var(--rarity),transparent 33%); }
+.item-symbol .pixel-icon { max-width: 83%; }
+.skill-card,.shop-row,.party-card,.save-row,.item-detail,.quest-detail { background: linear-gradient(140deg,#211b28,#161520); }
+.skill-glyph { border-color: color-mix(in srgb,currentColor,#6e5b52 69%); background: radial-gradient(color-mix(in srgb,currentColor,#221b2d 70%),#1a1724); }
+
+@media (max-width: 720px) and (orientation: portrait) {
+  .title-art { background-size: auto 81%; background-position: 70% top; }
+  .title-shade { background: linear-gradient(0deg,#100e19 6%,#100e19f4 24%,#100e19aa 49%,#100e1933 61%,transparent 83%),linear-gradient(90deg,#0c0c17b8 0%,#0d0c1847 54%,transparent 100%); }
+}
+@media (max-width: 740px) {
+  .hero-stage { min-height: 374px; }
+  .sprite-showcase { width: 106px; }
+  .sprite-stage { height: 80px; }
+  .sprite-stage canvas { width: 73px; }
+  .action-tile .pixel-icon { max-width: 75%; }
+}
+@media (max-width: 560px) and (orientation: portrait) {
+  .creation-layout { grid-template-columns: minmax(0,1fr); }
+  .identity-panel { grid-column: 1; }
+  .class-options { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 5px; }
+  .creation-panel { padding: 10px; }
+  .class-option { padding: 5px; }
+  .hero-stage { min-height: 389px; }
+}
+@media (max-width: 520px) and (orientation: portrait) {
+  .area-label { top: calc(236px + var(--safe-t)); }
+  .game-screen:has(.target-hud) .area-label { opacity: 0; animation: none; }
+  .game-screen .boss-hud { top: calc(236px + var(--safe-t)); }
+  .world-tools,.game-sound { bottom: calc(88px + var(--safe-b)); }
+  .joystick-wrap { bottom: calc(129px + var(--safe-b)); }
+  .mobile-orientation { bottom: calc(126px + var(--safe-b)); }
+}
+@media (max-height: 525px) and (orientation: landscape) {
+  .action-tile .pixel-icon { max-width: 78%; }
+  .world-tools .pixel-icon { max-width: 71%; }
+}

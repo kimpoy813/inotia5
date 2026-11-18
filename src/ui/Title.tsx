@@ -14,10 +14,10 @@ export function Title({onNew,onContinue,onPanel,hasSave,mute,toggleMute,motion,o
         <button className="small-icon sound-button" onClick={toggleMute} aria-label={mute?'Unmute game audio':'Mute game audio'}>{mute?<VolumeX size={17} strokeWidth={1.65}/>:<Volume2 size={17} strokeWidth={1.65}/>}<span>Sound {mute?'off':'on'}</span></button></div>
     </header>
     <section className="title-main" aria-label="Main menu">
-      <div className="title-kicker"><span className="kicker-line"/><span>A dark fantasy action RPG</span></div>
+      <div className="title-kicker"><span className="kicker-line"/><span>Pixel-art action RPG · Chapters I & II</span></div>
       <h1><span>Eclipse</span><span>of the Veil</span></h1>
       <Ornament className="title-ornament"/>
-      <p className="title-tagline">The seal is broken. What lies beyond<br className="desktop-break"/> has begun to wake.</p>
+      <p className="title-tagline">The bells have begun to ring again.<br className="desktop-break"/> This time, they remember your name.</p>
       <div className="title-actions">
         <Button variant="primary" className="title-action title-action--new" onClick={onNew}><Swords size={20} strokeWidth={1.65}/><span>New Game</span><ArrowRight size={17} strokeWidth={1.6}/></Button>
         <Button className="title-action title-action--continue" onClick={onContinue} disabled={!hasSave}><Gamepad2 size={18} strokeWidth={1.6}/><span>Continue</span>{hasSave?<ChevronRight size={16}/>:<small>No save yet</small>}</Button>
@@ -25,9 +25,9 @@ export function Title({onNew,onContinue,onPanel,hasSave,mute,toggleMute,motion,o
       </div>
       <div className="title-links"><button onClick={()=>onPanel('settings')}><Settings2 size={15} strokeWidth={1.6}/> Settings</button><i/><button onClick={()=>onPanel('help')}><CircleHelp size={15} strokeWidth={1.6}/> How to Play</button></div>
     </section>
-    <button className="chapter-card" onClick={()=>onPanel('chapter')} aria-label="Chapter I: The Broken Seal">
-      <span className="chapter-thumb"/><span className="chapter-copy"><span className="eyebrow"><i/> Chapter I</span><b>The Broken Seal</b><small>Begin in Lumenford</small></span><ChevronRight size={16} strokeWidth={1.4}/>
+    <button className="chapter-card" onClick={()=>onPanel('chapter')} aria-label="Open Chronicle">
+      <span className="chapter-thumb"/><span className="chapter-copy"><span className="eyebrow"><i/> Chapter II · Now playable</span><b>The Bell Below</b><small>From Lumenford to Vesperhold</small></span><ChevronRight size={16} strokeWidth={1.4}/>
     </button>
-    <footer className="title-footer"><span className="version"><i/> {offline?'Offline ready':'Single-player'} <span>·</span> v1.0</span><span className="control-copy"><Keyboard size={14}/> Keyboard & touch</span><button onClick={()=>onPanel('credits')}>Credits</button></footer>
+    <footer className="title-footer"><span className="version"><i/> {offline?'Offline ready':'Single-player'} <span>·</span> v1.2</span><span className="control-copy"><Keyboard size={14}/> Keyboard & touch</span><button onClick={()=>onPanel('credits')}>Credits</button></footer>
   </main>
 }

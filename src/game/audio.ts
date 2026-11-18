@@ -1,6 +1,6 @@
 import { defaultSettings } from './progression'
 import type { Settings } from './types'
-export type Theme='title'|'village'|'road'|'forest'|'spire'|'combat'|'boss'|'story'|'victory'|'defeat'
+export type Theme='title'|'village'|'road'|'forest'|'spire'|'combat'|'boss'|'story'|'victory'|'defeat'|'capital'|'archive'|'bellvault'|'lastwatch'
 type Tune={beat:number; wave:OscillatorType; melody:number[]; roots:number[]}
 const TUNES:Record<Theme,Tune>={
   title:{beat:.47,wave:'sine',melody:[67,0,62,64,65,0,62,0,69,0,67,62,57,0,0,0],roots:[38,46,41,43]},
@@ -8,6 +8,10 @@ const TUNES:Record<Theme,Tune>={
   road:{beat:.45,wave:'sine',melody:[62,65,0,67,0,65,62,0,60,62,0,57,0,60,0,0],roots:[38,41,45,38]},
   forest:{beat:.51,wave:'sine',melody:[69,0,0,64,0,65,0,60,67,0,62,0,57,0,0,0],roots:[45,41,36,43]},
   spire:{beat:.60,wave:'sine',melody:[60,0,61,0,0,56,0,0,65,0,61,0,58,0,53,0],roots:[41,42,37,39]},
+  capital:{beat:.48,wave:'sine',melody:[68,0,64,61,0,57,0,0,68,69,64,0,62,0,59,0],roots:[45,41,38,40]},
+  archive:{beat:.61,wave:'sine',melody:[60,0,63,0,0,58,0,0,56,0,0,62,0,57,0,0],roots:[36,32,34,35]},
+  bellvault:{beat:.67,wave:'triangle',melody:[62,0,0,57,0,0,53,0,61,0,57,0,0,52,0,0],roots:[38,34,33,36]},
+  lastwatch:{beat:.32,wave:'triangle',melody:[50,57,62,0,57,58,53,0,56,56,61,65,0,62,53,0],roots:[26,34,29,33]},
   combat:{beat:.24,wave:'triangle',melody:[57,57,62,0,65,62,0,60,55,55,58,0,62,58,0,57],roots:[38,41,43,45]},
   boss:{beat:.30,wave:'triangle',melody:[53,0,53,60,0,58,56,0,54,0,53,63,0,61,56,0],roots:[29,32,30,25]},
   story:{beat:.55,wave:'sine',melody:[64,0,67,0,71,0,69,0,62,0,64,0,67,0,0,0],roots:[45,48,41,43]},
@@ -77,6 +81,8 @@ class VeilAudio {
       case 'loot':emit(850,.15,.055,'sine',1.1);emit(1100,.19,.056,'sine',1.04,.06);break
       case 'quest':case 'level':case 'victory':for(const [i,n] of [60,64,67,72].entries())emit(hz(n),.46,.079,'sine',1,.08*i);break
       case 'omen':case 'boss':case 'impact':emit(77,.42,.15,'triangle',.58);emit(113,.32,.057,'sine',.68,.07);break
+      case 'bell':emit(147,1.54,.13,'sine',.98);emit(294,1.12,.07,'sine',.995);emit(423,.86,.039,'sine',.98,.021);emit(701,.63,.029,'sine',1,.009);break
+      case 'chime':emit(319,.55,.07,'sine',.99);emit(646,.45,.045,'sine',.95,.05);emit(816,.33,.054,'sine',.98,.10);break
       case 'defeat':emit(221,.68,.10,'triangle',.48);break
       default:emit(520,.09,.039,'sine',.9)
     }
